@@ -22,13 +22,13 @@ final testing = every row here is green at once.
 | INV-4 | **Concurrent spends** on one account never over-draw; final balance exact | `TestSpend_ConcurrentNoOverdraw` (`-race`) | S2 | ⬜ |
 | INV-5 | Balance = sum(earns) − sum(spends), **durable across restart** | `TestBalance_PersistsAcrossRestart` | S1 | ✅ |
 | INV-6 | **No wire-crossing:** N users hitting their own accounts only ever see their own data | `TestIsolation_NoCrossUserLeak` (`-race`) | S1 | ✅ |
-| INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S3 | ⬜ |
-| INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S3 | ⬜ |
+| INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S3 | ✅ |
+| INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S3 | ✅ |
 | INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S5 | ⬜ |
 | INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S5 | ⬜ |
 | INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ⬜ |
-| INV-12 | Algorithm is **pinned**: a token with `alg:none` or any non-HS256 algorithm is rejected (401) — defeats alg:none / RS↔HS confusion | `TestAuth_AlgConfusion_Rejected` | S3 | ⬜ |
-| INV-13 | Identity is sourced from the **verified token only** — a body/URL `account_id` that disagrees never grants access | `TestAuth_IdentityFromTokenOnly` | S3 | ⬜ |
+| INV-12 | Algorithm is **pinned**: a token with `alg:none` or any non-HS256 algorithm is rejected (401) — defeats alg:none / RS↔HS confusion | `TestVerify_AlgNone_Rejected`, `TestVerify_NonHS256_Rejected`, `TestAuth_AlgConfusion_Rejected` | S3 | ✅ |
+| INV-13 | Identity is sourced from the **verified token only** — a body/URL `account_id` that disagrees never grants access | `TestAuth_IdentityFromTokenOnly` | S3 | ✅ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 

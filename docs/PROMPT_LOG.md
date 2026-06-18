@@ -372,4 +372,52 @@ the walking skeleton, via `/design-slice`).
   balance`) · migration
   `internal/sqlitestore/migrations/20260618120000_s1_accounts_and_transactions.sql` · issue #2.
 
+### ⏱️ 2026-06-18 · Entry 15 — S3 built (Auth: JWT member/admin, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 4` — build **S3** (Auth) end-to-end with strict spec-first TDD via
+  the `tdd-runner` subagent (red → green → refactor → prove).
+- 🔎 **Explored / decisions in-build:**
+  - **Stateless JWT HS256 → no DB, no migration.** Identity rides in the signed token; S3 carries
+    **zero schema**. ❌ Rejected: a sessions/credentials table — out of scope, and the brief leaves
+    the token scheme to us.
+  - **Algorithm pinned** via `jwt.WithValidMethods(["HS256"])` → kills `alg:none` and RS↔HS
+    confusion (**INV-12**). ❌ Rejected: accepting the token's self-declared `alg`.
+  - **Layer split stays at 3 packages.** JWT *verification* (parse Bearer, pin HS256, extract
+    claims) is `httpapi` **middleware**; the authorization *rule* is a **pure function in `wallet`**
+    — `Authorize`, with `Identity`/`Role` types + an `ErrForbidden` sentinel. The domain owns the
+    rule, the edge owns the crypto. ✅
+  - **`role` kept as a `minLength:1` string, NOT a schema enum.** An *unknown* role must surface as a
+    semantic **422** (handler's `ParseRole`); a schema enum would make `kin-openapi` bounce it as a
+    **400** at the edge — wrong signal. ✏️ Side effect: the Schemathesis gate run uses
+    `--exclude-checks positive_data_acceptance`, since a 422 on a *schema-valid-but-unknown* role is
+    an intentional business rule, not a contract bug.
+  - **Midstream S1 integration:** flipped the S1 handlers (`GetAccount`, `GetBalance`,
+    `CreateTransaction`) from reading `account_id` in the body/URL to reading the **verified identity
+    from request context** + `wallet.Authorize`. This is exactly the identity-seam swap S1 designed
+    for (`subjectAccountID`) — a swap, not a rewrite — and it's what makes **INV-13** real.
+  - **Latent issue flagged for a future slice:** a possible **int64 overflow** in the S1 balance
+    `SUM` — noted out of S3 scope, to be handled where it belongs.
+- 🤖 **Did:** spec-first **RED** (global `security: [bearerAuth]` default + `security: []` opt-outs,
+  `POST /token`, regen via `oapi-codegen`; failing unit/acceptance tests) → **GREEN**
+  (`internal/wallet/auth.go` — `Authorize`/`Identity`/`Role`/`ErrForbidden`; `internal/httpapi/auth.go`
+  — verification middleware; `internal/httpapi/token.go` — demo token mint + `ParseRole`; S1 handler
+  rewire) → **REFACTOR** → **PROVE**. **Config:** `GOWALLET_JWT_SECRET` (required, **fail-fast at
+  boot**) + `GOWALLET_JWT_TTL` (default `1h`), read in `cmd/gowallet/main.go`. Added dep
+  **`github.com/golang-jwt/jwt/v5`**.
+- ✅ **Accepted:** all of it — quality gate **green** (gofmt · vet · golangci-lint clean ·
+  `go build ./...` ok · `go test -race ./...` green · Schemathesis **1174 passed / 0 failures** ·
+  boot fail-fast on missing secret verified). **INV-7/INV-8/INV-12/INV-13 proven.**
+- 🧪 **Tests added:** `TestAccess_MemberOwnOnly`, `TestAccess_AdminAny`, `TestVerify_AlgNone_Rejected`,
+  `TestVerify_NonHS256_Rejected`, `TestAuth_AlgConfusion_Rejected`, `TestAuth_IdentityFromTokenOnly`
+  (+ supporting unit tests), landed in `test/acceptance/s3_auth_test.go` and the package test files.
+- 💡 **Why:** a single service that signs *and* verifies needs no key split, no DB, no migration —
+  HS256 + method pinning is simpler and dodges alg-confusion; identity from the **verified token
+  only** is what makes member-own enforcement actually enforceable.
+- 📚 GitHub issue #4 (design) · `docs/ACCEPTANCE.md` · `docs/ARCHITECTURE.md` (3-package layout,
+  wire-crossing rule) · `tdd-workflow` skill.
+- 🔗 **Artifacts:** branch `slice/s3-auth` · issue #4 · new files
+  `internal/wallet/auth.go`, `internal/httpapi/auth.go`, `internal/httpapi/token.go` (+ tests) ·
+  `test/acceptance/s3_auth_test.go` · `cmd/gowallet/main.go` (JWT config) · `go.mod`/`go.sum`
+  (`golang-jwt/jwt/v5`). Closes #4 once the PR merges.
+
 <!-- New entries go below this line -->

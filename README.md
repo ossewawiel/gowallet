@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S1%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S3%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -37,8 +37,15 @@
     `kin-openapi` request validation. **INV-1/2/5/6 proven under `-race`**; full quality gate green
     (gofmt · vet · lint · build · `-race` · Schemathesis **3903 cases / 0 issues**). On branch
     `slice/s1-accounts-earn`.
+  - ✅ **[S3 / #4](https://github.com/ossewawiel/gowallet/issues/4)** — auth (JWT, member/admin)
+    **built & green**: stateless **HS256** (no DB, no migration), `POST /token` demo mint, algorithm
+    **pinned** (`WithValidMethods`), global `security: [bearerAuth]` default. Verification is `httpapi`
+    middleware; the access rule (`Authorize`) is a **pure function in `wallet`** — still 3 packages.
+    S1 handlers rewired to read identity from the **verified token only**. **INV-7/8/12/13 proven**;
+    full quality gate green (gofmt · vet · lint · build · `-race` · Schemathesis **1174 / 0 failures** ·
+    boot fail-fast on missing secret). On branch `slice/s3-auth` (ready for PR).
   - ➡️ **Next:** 🅰️ **S2 — Spend + no-negative guard** (extends the earn tx with a balance check;
-    INV-3/4) · in parallel 🅱️ S3 (auth) · 🅲 S4 (audit).
+    INV-3/4) · in parallel 🅲 **S4 — Audit** (INV-11) · then 🅱️ **S5 — CSV batch ingest** (INV-9/10).
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

@@ -2,15 +2,19 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/ossewawiel/gowallet/internal/wallet"
 )
 
-// server implements gen.ServerInterface. It holds only the shared health
-// service; identity and per-request data live in r.Context().
+// server implements gen.ServerInterface. It holds the shared services plus the
+// JWT signing config used by POST /token. Everything request-specific (the
+// caller's verified identity) rides in r.Context(), never on this struct.
 type server struct {
-	health *wallet.HealthService
-	wallet *wallet.WalletService
+	health    *wallet.HealthService
+	wallet    *wallet.WalletService
+	jwtSecret string
+	jwtTTL    time.Duration
 }
 
 // GetHealth pings the database and reports readiness.

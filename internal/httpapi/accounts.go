@@ -43,7 +43,11 @@ func (s *server) CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 // GetAccount handles GET /accounts/{id} → 200 or 404.
 func (s *server) GetAccount(w http.ResponseWriter, r *http.Request, accountID string) {
-	id := subjectAccountID(r, accountID)
+	id, err := authorizeTarget(r, accountID)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
 	acct, err := s.wallet.GetAccount(r.Context(), id)
 	if err != nil {
 		writeDomainError(w, r, err)
@@ -58,7 +62,11 @@ func (s *server) GetAccount(w http.ResponseWriter, r *http.Request, accountID st
 
 // GetBalance handles GET /accounts/{id}/balance → 200 or 404.
 func (s *server) GetBalance(w http.ResponseWriter, r *http.Request, accountID string) {
-	id := subjectAccountID(r, accountID)
+	id, err := authorizeTarget(r, accountID)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
 	bal, err := s.wallet.Balance(r.Context(), id)
 	if err != nil {
 		writeDomainError(w, r, err)
@@ -86,7 +94,11 @@ func (s *server) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := subjectAccountID(r, body.AccountId)
+	id, err := authorizeTarget(r, body.AccountId)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
 	stored, created, err := s.wallet.RecordEarn(r.Context(), wallet.Transaction{
 		Ref:        body.Ref,
 		AccountID:  id,

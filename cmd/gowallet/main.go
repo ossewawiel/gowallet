@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,17 +20,38 @@ import (
 // config is read from the environment with sane defaults. The only shared,
 // process-wide state is this config plus the *sql.DB pool inside the store.
 type config struct {
-	addr     string
-	dbPath   string
-	specPath string
+	addr      string
+	dbPath    string
+	specPath  string
+	jwtSecret string
+	jwtTTL    time.Duration
 }
 
-func loadConfig() config {
-	return config{
-		addr:     envOr("GOWALLET_ADDR", ":8080"),
-		dbPath:   envOr("GOWALLET_DB", "gowallet.db"),
-		specPath: envOr("GOWALLET_SPEC", "api/openapi.yaml"),
+// loadConfig reads config from the environment. It returns an error for invalid
+// or missing-but-required values so boot can fail fast (e.g. an empty JWT
+// secret would silently disable auth — we refuse to start instead).
+func loadConfig() (config, error) {
+	secret := os.Getenv("GOWALLET_JWT_SECRET")
+	if secret == "" {
+		return config{}, errors.New("GOWALLET_JWT_SECRET is required (HMAC signing secret) — refusing to start without it")
 	}
+
+	ttl := time.Hour
+	if v := os.Getenv("GOWALLET_JWT_TTL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return config{}, fmt.Errorf("GOWALLET_JWT_TTL is not a valid duration (e.g. 1h, 30m): %w", err)
+		}
+		ttl = d
+	}
+
+	return config{
+		addr:      envOr("GOWALLET_ADDR", ":8080"),
+		dbPath:    envOr("GOWALLET_DB", "gowallet.db"),
+		specPath:  envOr("GOWALLET_SPEC", "api/openapi.yaml"),
+		jwtSecret: secret,
+		jwtTTL:    ttl,
+	}, nil
 }
 
 func envOr(key, fallback string) string {
@@ -40,7 +62,11 @@ func envOr(key, fallback string) string {
 }
 
 func main() {
-	if err := run(loadConfig()); err != nil {
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Fatalf("gowallet: %v", err)
+	}
+	if err := run(cfg); err != nil {
 		log.Fatalf("gowallet: %v", err)
 	}
 }
@@ -67,9 +93,11 @@ func run(cfg config) error {
 	// Transport: wire the health service (store satisfies wallet.Pinger) into
 	// the router. httpapi never sees sqlitestore — only the wallet service.
 	router := httpapi.NewRouter(httpapi.Deps{
-		Health:   wallet.NewHealthService(store),
-		Wallet:   wallet.NewWalletService(store, store),
-		SpecYAML: specYAML,
+		Health:    wallet.NewHealthService(store),
+		Wallet:    wallet.NewWalletService(store, store),
+		SpecYAML:  specYAML,
+		JWTSecret: cfg.jwtSecret,
+		JWTTTL:    cfg.jwtTTL,
 	})
 
 	log.Printf("gowallet listening on %s (db=%s)", cfg.addr, cfg.dbPath)

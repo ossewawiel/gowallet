@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,6 +17,8 @@ import (
 // consistent across the whole API (per docs/REST_API_GUIDELINES.md).
 func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, wallet.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "you may not access this account")
 	case errors.Is(err, wallet.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, "not_found", "resource not found")
 	case errors.Is(err, wallet.ErrAccountExists):
@@ -65,6 +68,7 @@ func recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
+				log.Printf("httpapi: recovered panic on %s %s: %v", r.Method, r.URL.Path, rec)
 				writeError(w, r, http.StatusInternalServerError,
 					"internal_error", "an unexpected error occurred")
 			}

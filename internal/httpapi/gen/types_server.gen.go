@@ -15,6 +15,10 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+const (
+	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
+)
+
 // Defines values for HealthDb.
 const (
 	Down HealthDb = "down"
@@ -60,6 +64,21 @@ const (
 func (e NewTransactionKind) Valid() bool {
 	switch e {
 	case NewTransactionKindEarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenResponseTokenType.
+const (
+	Bearer TokenResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenResponseTokenType enum.
+func (e TokenResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
 		return true
 	default:
 		return false
@@ -141,6 +160,25 @@ type NewTransaction struct {
 // NewTransactionKind S1 = earn only; S2 widens to [earn, spend]
 type NewTransactionKind string
 
+// TokenRequest defines model for TokenRequest.
+type TokenRequest struct {
+	AccountId string `json:"account_id"`
+	Role      string `json:"role"`
+}
+
+// TokenResponse defines model for TokenResponse.
+type TokenResponse struct {
+	// ExpiresIn seconds until the token expires
+	ExpiresIn int `json:"expires_in"`
+
+	// Token the HS256 JWT
+	Token     string                 `json:"token"`
+	TokenType TokenResponseTokenType `json:"token_type"`
+}
+
+// TokenResponseTokenType defines model for TokenResponse.TokenType.
+type TokenResponseTokenType string
+
 // Transaction defines model for Transaction.
 type Transaction struct {
 	AccountId  string          `json:"account_id"`
@@ -153,8 +191,20 @@ type Transaction struct {
 // TransactionKind defines model for Transaction.Kind.
 type TransactionKind string
 
+// Forbidden Single error envelope used across the whole API (RFC 9457-ish, trimmed).
+type Forbidden = Error
+
+// Unauthorized Single error envelope used across the whole API (RFC 9457-ish, trimmed).
+type Unauthorized = Error
+
+// bearerAuthContextKey is the context key for bearerAuth security scheme
+type bearerAuthContextKey string
+
 // CreateAccountJSONRequestBody defines body for CreateAccount for application/json ContentType.
 type CreateAccountJSONRequestBody = NewAccount
+
+// IssueTokenJSONRequestBody defines body for IssueToken for application/json ContentType.
+type IssueTokenJSONRequestBody = TokenRequest
 
 // CreateTransactionJSONRequestBody defines body for CreateTransaction for application/json ContentType.
 type CreateTransactionJSONRequestBody = NewTransaction
@@ -173,6 +223,9 @@ type ServerInterface interface {
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// Issue a signed HS256 JWT for an account_id + role (demo token mint).
+	// (POST /token)
+	IssueToken(w http.ResponseWriter, r *http.Request)
 	// Record an earn transaction (idempotent on ref)
 	// (POST /transactions)
 	CreateTransaction(w http.ResponseWriter, r *http.Request)
@@ -206,6 +259,12 @@ func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Issue a signed HS256 JWT for an account_id + role (demo token mint).
+// (POST /token)
+func (_ Unimplemented) IssueToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Record an earn transaction (idempotent on ref)
 // (POST /transactions)
 func (_ Unimplemented) CreateTransaction(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +282,12 @@ type MiddlewareFunc func(http.Handler) http.Handler
 
 // CreateAccount operation middleware
 func (siw *ServerInterfaceWrapper) CreateAccount(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateAccount(w, r)
@@ -250,6 +315,12 @@ func (siw *ServerInterfaceWrapper) GetAccount(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAccount(w, r, accountId)
 	}))
@@ -276,6 +347,12 @@ func (siw *ServerInterfaceWrapper) GetBalance(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetBalance(w, r, accountId)
 	}))
@@ -301,8 +378,28 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// IssueToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateTransaction operation middleware
 func (siw *ServerInterfaceWrapper) CreateTransaction(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateTransaction(w, r)
@@ -441,11 +538,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/healthz", wrapper.GetHealth)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/token", wrapper.IssueToken)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/transactions", wrapper.CreateTransaction)
 	})
 
 	return r
 }
+
+type ForbiddenJSONResponse Error
+
+type UnauthorizedJSONResponse Error
 
 type CreateAccountRequestObject struct {
 	Body *CreateAccountJSONRequestBody
@@ -489,6 +593,20 @@ func (response CreateAccount400JSONResponse) VisitCreateAccountResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateAccount401JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -543,6 +661,34 @@ func (response GetAccount400JSONResponse) VisitGetAccountResponse(w http.Respons
 	return err
 }
 
+type GetAccount401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetAccount401JSONResponse) VisitGetAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccount403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetAccount403JSONResponse) VisitGetAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetAccount404JSONResponse Error
 
 func (response GetAccount404JSONResponse) VisitGetAccountResponse(w http.ResponseWriter) error {
@@ -593,6 +739,34 @@ func (response GetBalance400JSONResponse) VisitGetBalanceResponse(w http.Respons
 	return err
 }
 
+type GetBalance401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetBalance401JSONResponse) VisitGetBalanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBalance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetBalance403JSONResponse) VisitGetBalanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetBalance404JSONResponse Error
 
 func (response GetBalance404JSONResponse) VisitGetBalanceResponse(w http.ResponseWriter) error {
@@ -638,6 +812,56 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueTokenRequestObject struct {
+	Body *IssueTokenJSONRequestBody
+}
+
+type IssueTokenResponseObject interface {
+	VisitIssueTokenResponse(w http.ResponseWriter) error
+}
+
+type IssueToken200JSONResponse TokenResponse
+
+func (response IssueToken200JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueToken400JSONResponse Error
+
+func (response IssueToken400JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueToken422JSONResponse Error
+
+func (response IssueToken422JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -692,6 +916,34 @@ func (response CreateTransaction400JSONResponse) VisitCreateTransactionResponse(
 	return err
 }
 
+type CreateTransaction401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateTransaction401JSONResponse) VisitCreateTransactionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTransaction403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateTransaction403JSONResponse) VisitCreateTransactionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateTransaction404JSONResponse Error
 
 func (response CreateTransaction404JSONResponse) VisitCreateTransactionResponse(w http.ResponseWriter) error {
@@ -720,6 +972,9 @@ type StrictServerInterface interface {
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// Issue a signed HS256 JWT for an account_id + role (demo token mint).
+	// (POST /token)
+	IssueToken(ctx context.Context, request IssueTokenRequestObject) (IssueTokenResponseObject, error)
 	// Record an earn transaction (idempotent on ref)
 	// (POST /transactions)
 	CreateTransaction(ctx context.Context, request CreateTransactionRequestObject) (CreateTransactionResponseObject, error)
@@ -854,6 +1109,37 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueToken operation middleware
+func (sh *strictHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
+	var request IssueTokenRequestObject
+
+	var body IssueTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueToken(ctx, request.(IssueTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueTokenResponseObject); ok {
+		if err := validResponse.VisitIssueTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

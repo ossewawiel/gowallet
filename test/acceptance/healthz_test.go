@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,11 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ossewawiel/gowallet/internal/httpapi"
 	"github.com/ossewawiel/gowallet/internal/sqlitestore"
 	"github.com/ossewawiel/gowallet/internal/wallet"
 )
+
+// acceptanceSecret is the HS256 signing secret used by every booted test app.
+// Real config comes from GOWALLET_JWT_SECRET in cmd/gowallet; tests pin a known
+// value so they can mint tokens via POST /token and exercise the auth path.
+const acceptanceSecret = "acceptance-test-secret"
 
 // bootRealApp wires the same three packages main.go does, against a real
 // on-disk SQLite file, and returns a live test server.
@@ -36,14 +43,56 @@ func bootRealApp(t *testing.T) *httptest.Server {
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{
-		Health:   wallet.NewHealthService(store),
-		Wallet:   wallet.NewWalletService(store, store),
-		SpecYAML: specYAML,
+		Health:    wallet.NewHealthService(store),
+		Wallet:    wallet.NewWalletService(store, store),
+		SpecYAML:  specYAML,
+		JWTSecret: acceptanceSecret,
+		JWTTTL:    time.Hour,
 	})
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// authPostJSON POSTs a JSON body to url with a Bearer token.
+func authPostJSON(t *testing.T, url, token string, body any) *http.Response {
+	t.Helper()
+	buf, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	return resp
+}
+
+// authBalance reads an account balance with the given bearer token, asserting 200.
+func authBalance(t *testing.T, base, id, token string) int64 {
+	t.Helper()
+	resp := authGet(t, base, "/accounts/"+id+"/balance", token)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET balance %s: want 200, got %d", id, resp.StatusCode)
+	}
+	var got struct {
+		AccountID string `json:"account_id"`
+		Balance   int64  `json:"balance"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode balance: %v", err)
+	}
+	return got.Balance
 }
 
 func TestHealthz_EndToEnd_PingsRealDB(t *testing.T) {
