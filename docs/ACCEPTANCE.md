@@ -33,6 +33,10 @@ final testing = every row here is green at once.
 | INV-15 | Wrong **or** unknown credential → **401**, no token, secret never logged, **no user enumeration** (identical response) | `TestLogin_BadCredential_401`, `TestLogin_UnknownAccount_SameResponse` | S6 | ⬜ |
 | INV-16 | Issued `role` comes from the **stored account**, never the request — a member can't self-mint admin | `TestLogin_RoleFromStore_NotRequest` | S6 | ⬜ |
 | INV-17 | Secret is stored only as a **bcrypt hash** and is never returned in any response | `TestAccounts_SecretNeverReturned`, `TestStore_PasswordHashedNotPlaintext` | S6 | ⬜ |
+| INV-18 | `GET /accounts` (list all) is **admin-only** — a member gets **403** | `TestListAccounts_AdminOnly`, `TestListAccounts_Member_Forbidden` | S7 | ⬜ |
+| INV-19 | Transaction list is **account-scoped**: member sees **own only** (else 403), admin sees any | `TestListTransactions_MemberOwnOnly`, `TestListTransactions_AdminAny` | S7 | ⬜ |
+| INV-20 | Transaction list returns **only that account's** transactions (no cross-account leak), newest-first | `TestListTransactions_NoCrossAccountLeak` | S7 | ⬜ |
+| INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ⬜ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 

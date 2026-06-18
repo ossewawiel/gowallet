@@ -520,4 +520,34 @@ the walking skeleton, via `/design-slice`).
   `internal/sqlitestore/accounts.go`, `internal/httpapi/errors.go`, `internal/httpapi/accounts.go`,
   new `test/acceptance/s2_spend_test.go`. Closes #3 once the PR merges.
 
+### ⏱️ 2026-06-18 · Entry 19 — S7 added: listing accounts + transactions
+
+- 🧑 **Asked:** Can an admin **list** members and get a list back? And **list transactions**?
+- 🔎 **Explored:** The surface only had fetch-by-id (`GET /accounts/{id}`, `/balance`) — no collection
+  endpoints. The brief's *"admins can view any account"* reads naturally as enumeration; a transaction
+  history is implied by "tracks balance." Options weighed: both + pagination · **both, no paging** ·
+  transactions-only · skip-and-document.
+- ✅ **Accepted:** **both, no pagination** (user's call) — new slice **S7**: `GET /accounts`
+  (admin-only) + `GET /accounts/{id}/transactions` (member-own / admin-any).
+- ❌ **Rejected:** limit/offset paging for now (flagged as the production upgrade in the slice doc).
+- 🤖 **Did:** Wrote `docs/slices/S7.md`, opened **issue #13** (`slice,stream-a`), registered
+  **INV-18/19/20** in `ACCEPTANCE.md`, added S7 to `SLICES.md` + the slice index + README progress.
+- 💡 **Why:** reads only (no migration) — reuses the S3 access rule + the derived-balance query;
+  fills the obvious admin/member read gap.
+- 🔗 **Artifacts:** docs/slices/S7.md · GitHub issue #13 · ACCEPTANCE INV-18–20 · SLICES.md · README.md.
+
+### ⏱️ 2026-06-18 · Entry 20 — Audit log made listable (folded into S4)
+
+- 🧑 **Asked:** And listing the audit log?
+- 🔎 **Explored:** Where `GET /audit` belongs — a standalone listings slice would chain the S7 reads
+  behind S4. Since **S4 owns the audit table** (and isn't built yet), the read endpoint is most
+  cohesive there.
+- ✅ **Accepted:** add **`GET /audit`** (admin-only, optional `?account_id=` filter, no paging) to
+  **S4** rather than S7.
+- 🤖 **Did:** Enhanced `docs/slices/S4.md` + **synced issue #5** (`gh issue edit 5`), registered
+  **INV-21** in `ACCEPTANCE.md`, updated `SLICES.md` (S4 row).
+- 💡 **Why:** keeps the audit read with its writer; avoids coupling the buildable-now S7 to the
+  not-yet-built S4.
+- 🔗 **Artifacts:** docs/slices/S4.md · GitHub issue #5 (synced) · ACCEPTANCE INV-21 · SLICES.md.
+
 <!-- New entries go below this line -->

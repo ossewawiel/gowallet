@@ -19,15 +19,15 @@
 |------|------------------|:-----:|
 | **1 · Plumbing** | Go 1.26.4 + gh + gopls, public repo live, prompt timeline started | ✅ done |
 | **2 · Dev system** | CLAUDE.md, engineering docs, skills, subagents, commands, issue templates | ✅ done |
-| **3 · Design & build** | The actual wallet — 6 slices S0→S5, spec-first + TDD | 🚧 in progress |
+| **3 · Design & build** | The actual wallet — 8 slices S0→S7, spec-first + TDD | 🚧 in progress |
 
 **Where we are:**
 - ✅ **Step 1** — toolchain verified, `github.com/ossewawiel/gowallet` public & pushed.
 - ✅ **Step 2** — the development system: layered architecture, REST + error standards, issue-driven
   vertical-slice TDD workflow, two-layer testing (Schemathesis + Go `-race`), 3 skills, 2 subagents,
   4 commands, GitHub slice templates.
-- 🚧 **Step 3** — backlog finalized (**6 slices, S0→S5**), kickoff prompts in
-  [`docs/slices/`](docs/slices/), **6 GitHub issues opened** (#1–#6).
+- 🚧 **Step 3** — backlog grown to **8 slices (S0→S7)**, kickoff prompts in
+  [`docs/slices/`](docs/slices/), a **GitHub issue per slice**.
   - ✅ **[S0 / #1](https://github.com/ossewawiel/gowallet/issues/1)** — walking skeleton **built &
     green**: `GET /healthz` (real DB ping), WAL/PRAGMAs, goose runner, `/swagger`, the 3-package
     layout wired end-to-end. Full quality gate passing. Merged to `main` via PR #7.
@@ -56,6 +56,9 @@
   - 🔑 **Backlog +1:** 🅱️ **S6 — Login** (credential-based token issuance,
     [#10](https://github.com/ossewawiel/gowallet/issues/10)) — a real `POST /login` replacing the S3
     demo mint; seeds demo creds (see **🔑 Test credentials** below).
+  - 📋 **Backlog +2:** 🅰️ **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13))
+    — `GET /accounts` (admin) + `GET /accounts/{id}/transactions` (own/admin). Plus **S4 (audit) now
+    exposes `GET /audit`** (admin-only) so the audit log is listable.
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

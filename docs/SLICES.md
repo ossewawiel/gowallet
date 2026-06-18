@@ -1,6 +1,6 @@
 # 🍰 Slice backlog
 
-The build plan: **7 vertical slices**, each one full REST cycle. Ordered for **3 parallel streams**,
+The build plan: **8 vertical slices**, each one full REST cycle. Ordered for **3 parallel streams**,
 with **auth running parallel from right after S0** and **concurrency baked into the transaction
 slices** (no separate hardening slice).
 
@@ -17,9 +17,10 @@ slices** (no separate hardening slice).
 | **S1** | Accounts + Earn + Balance | `POST /accounts`, `GET /accounts/{id}`, `POST /transactions`(earn), `GET …/balance` | INV-1,5 + 2,6 baked | S0 | 🅰️ |
 | **S2** | Spend + guard | `POST /transactions`(spend), no-negative | INV-3 + 4 baked | S1 | 🅰️ |
 | **S3** | Auth (JWT) | `POST /token`, verify middleware, member/admin | INV-7,8 | S0 | 🅱️ |
-| **S4** | Audit trail | audit table + writer | INV-11 | S0 | 🅲 |
+| **S4** | Audit trail | audit table + writer + `GET /audit` (admin) | INV-11, 21 | S0 | 🅲 |
 | **S5** | CSV batch ingestion | ingest + summary, idempotent reprocess | INV-9,10 | S2, S4 | 🅲 |
 | **S6** | Login (credential token) | `POST /login` → JWT; seed member+admin creds | INV-14–17 | S1, S3 | 🅱️ |
+| **S7** | Listings | `GET /accounts` (admin), `GET /accounts/{id}/transactions` (own/admin) | INV-18–20 | S1, S3 | 🅰️ |
 
 ---
 
@@ -34,6 +35,7 @@ slices** (no separate hardening slice).
 ```
 
 - 🅰️ **Core spine:** `S0 → S1 → S2`. Serial within the stream (each builds on the last's data model).
+  **S7 (listings)** extends the core reads (`GET /accounts`, per-account ledger) once S1 + S3 are in.
 - 🅱️ **Security:** `S3` starts as soon as **S0** is in — JWT is pure crypto + HTTP, no DB dep. Its
   ownership enforcement wires across S1/S2 **midstream**. Then **S6 (login)** adds credential-based
   token issuance once **S1 + S3** are in.
