@@ -95,6 +95,7 @@ func run(cfg config) error {
 	router := httpapi.NewRouter(httpapi.Deps{
 		Health:    wallet.NewHealthService(store),
 		Wallet:    wallet.NewWalletService(store, store),
+		Audit:     wallet.NewAuditService(store),
 		SpecYAML:  specYAML,
 		JWTSecret: cfg.jwtSecret,
 		JWTTTL:    cfg.jwtTTL,

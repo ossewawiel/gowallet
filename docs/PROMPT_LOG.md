@@ -550,4 +550,87 @@ the walking skeleton, via `/design-slice`).
   not-yet-built S4.
 - 🔗 **Artifacts:** docs/slices/S4.md · GitHub issue #5 (synced) · ACCEPTANCE INV-21 · SLICES.md.
 
+### ⏱️ 2026-06-18 · Entry 21 — S4 designed (Audit trail, design-only)
+
+- 🧑 **Asked:** `/design-slice S4` — Audit trail: a durable, append-only record of every txn attempt
+  (reason + timestamp), an **admin-only `GET /audit`**, and a writer service S5 can lean on.
+- 🔎 **Explored — scope:** build the audit *machinery* standalone (table + `AuditService` writer +
+  `GET /audit`) but **don't** wire it into `POST /transactions` in S4. The classic trap — "audit must
+  never change the correctness of the money path" — is honored trivially by *not touching* it. The
+  brief only requires auditing the **batch** attempts, so **S5 (CSV batch)** becomes the writer's
+  first real caller. Keeps S4 standalone + shippable.
+- ✅ **Accepted — table design, 3 deliberate breaks from `transactions`:**
+
+  | Field | `transactions` | `audit_log` | Why the difference |
+  |-------|----------------|-------------|--------------------|
+  | `ref` | `UNIQUE` (idempotency) | **not unique** | append-only — duplicates are *events to record* |
+  | `account_id` | FK to accounts | **no FK** | must record attempts against *unknown* accounts |
+  | `kind` / `points` | constrained | **unconstrained** | faithfully record a *rejected* attempt, invalid values and all |
+  | `outcome` | — | `CHECK(outcome IN ('accepted','rejected','duplicate'))` | our one controlled vocabulary |
+
+- ✅ **Accepted — newest-first = `ORDER BY id DESC`**, not `created_at DESC`: `created_at` is only
+  second-precision, so same-second rows tie; the `AUTOINCREMENT` id is strictly monotonic.
+- ✅ **Accepted — `AuditEntry.kind` is a free string** in the OpenAPI schema (not the `earn|spend`
+  enum) so a rejected row carrying an invalid kind doesn't violate its *own* contract.
+- ✅ **Accepted — `GET /audit` returns a bare array** (`AuditLog`) — no pagination at demo scale,
+  simplest thing for Schemathesis to chew on.
+- ✅ **Accepted — admin-only via a new `requireAdmin(r)` transport helper**: identity from the
+  verified token in context, **never** the URL. Reusable by S7's admin-only `GET /accounts`. `/audit`
+  stays protected-by-default.
+- ✅ **Accepted — new invariant INV-22** (append-only) on top of the pre-existing INV-11 / INV-21.
+- 🤖 **Did:** enriched **GitHub issue #5** with the full design — OpenAPI fragment, timestamped
+  migration `20260618130000_s4_audit_log.sql`, sqlc queries, domain/handler sketch, red-test list,
+  and acceptance criteria. Acceptance seeding note: with **no HTTP write path** for audit in S4, a
+  `bootRealAppWithStore` helper seeds rows via `store.AppendAudit`, then asserts through `GET /audit`.
+  **No production code written — design only.**
+- 💡 **Why:** the money path is the crown jewel; keeping audit a side-table with its own loose
+  constraints means an audit failure can never corrupt a balance, and the writer is ready the moment
+  S5 needs it.
+- 🔗 **Artifacts:** GitHub issue #5 (https://github.com/ossewawiel/gowallet/issues/5) ·
+  planned migration `internal/sqlitestore/migrations/20260618130000_s4_audit_log.sql` ·
+  ACCEPTANCE INV-22.
+
+### ⏱️ 2026-06-18 · Entry 22 — S4 built (Audit trail, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 5` — build **S4** (audit trail) end-to-end with strict spec-first
+  TDD (red → green → refactor → prove).
+- 🔎 **Explored / decisions in-build:**
+  - **The money path stays untouched.** Audit is its own side-table written by its own insert,
+    **never** inside the money `sql.Tx`. So an audit failure can't corrupt a balance — the golden
+    rule holds by *not touching* the crown jewel. ✅ verified: `git diff main` on `wallet.go`,
+    `sqlitestore/accounts.go`, and `httpapi/accounts.go` is **empty** — the earn/spend path is
+    byte-for-byte unchanged.
+  - **`audit_log` deliberately loosens the `transactions` constraints** (as designed in Entry 21):
+    `ref` **not unique** (append-only), **no FK** on `account_id` (must record attempts against
+    unknown accounts), **no CHECK** on `kind`/`points` (faithfully record a rejected attempt, junk
+    values and all), and the *one* controlled vocabulary — `outcome CHECK`-constrained.
+- 🤖 **Did:** Branched `slice/s4-audit`. **RED first** — the build broke on the regenerated
+  `ServerInterface` now requiring `ListAudit`, and `wallet`/store tests failed on undefined
+  `AuditEntry`/`AuditOutcome` → **GREEN** (min code) → small refactor. Added `GET /audit` +
+  `AuditEntry`/`AuditLog` schemas to `api/openapi.yaml` (regen via `oapi-codegen`); timestamped
+  migration `20260618130000_s4_audit_log.sql`; `sqlc` queries `AppendAuditEntry` / `ListAuditLog` /
+  `ListAuditLogByAccount`; `wallet.AuditService` (append-only writer, validates outcome) +
+  `AuditRepository`; `sqlitestore` impl; `internal/httpapi/audit.go` `ListAudit` handler + a new
+  `requireAdmin` helper in `identity.go`; wired `Audit` into `httpapi.Deps` + `main.go`; factored a
+  `bootRealAppWithStore` helper into the acceptance harness (no HTTP write path for audit in S4, so
+  it seeds rows via the store, then asserts through `GET /audit`).
+- 🧪 **Tests added:**
+  - **domain** — `TestAuditService_Record_ValidatesOutcome`, `TestAuditService_Record_AppendsEveryCall`;
+  - **store** — `TestAudit_RecordsEachAttempt` (**INV-11**), `TestAudit_AppendOnly_SameRefTwice`
+    (**INV-22**), `TestAudit_ListNewestFirst`, `TestAudit_ListByAccount_FiltersAndNoLeak`;
+  - **acceptance** — `TestListAudit_AdminOnly` (**INV-21**), `TestListAudit_RecordsShape`
+    (**INV-21**), `TestListAudit_NoToken_401`.
+- ✅ **Accepted:** quality gate **green** — gofmt · go vet · golangci-lint **0 issues** ·
+  `go build ./...` · `go test -race ./...` (all packages) · Schemathesis (the new `GET /audit`
+  passed clean in every phase incl. **stateful**). **INV-11 / INV-21 / INV-22 proven.**
+- ⚠️ **Note:** the pre-existing `POST /token` **422** (semantic role validation, Entry 15) is the
+  documented non-issue — unrelated to S4.
+- 💡 **Why:** keeping audit a side-table with loose constraints + its own insert means an audit
+  failure can never touch a balance, and the `AuditService` writer is ready the moment **S5 (CSV
+  batch)** needs its first real caller.
+- 🔗 **Artifacts:** branch `slice/s4-audit` · commit `fbd8d8a` · migration
+  `internal/sqlitestore/migrations/20260618130000_s4_audit_log.sql` · `internal/wallet/audit.go` ·
+  `internal/httpapi/audit.go` · `internal/httpapi/identity.go` (`requireAdmin`) · `api/openapi.yaml`
+  · issue #5 (closes #5 once the PR merges).
+
 <!-- New entries go below this line -->

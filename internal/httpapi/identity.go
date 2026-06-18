@@ -31,3 +31,17 @@ func authorizeTarget(r *http.Request, target string) (string, error) {
 	}
 	return target, nil
 }
+
+// requireAdmin gates an admin-only route. It reads the VERIFIED identity from the
+// context (placed there by the Authenticator middleware) — never from the URL or
+// body — and refuses anyone who isn't an admin with wallet.ErrForbidden (→ 403).
+// A missing identity (should be impossible on a protected route) also fails
+// closed. Reusable across admin-only operations (GET /audit now, GET /accounts
+// in S7).
+func requireAdmin(r *http.Request) error {
+	id, ok := identityFrom(r.Context())
+	if !ok || id.Role != wallet.RoleAdmin {
+		return wallet.ErrForbidden
+	}
+	return nil
+}
