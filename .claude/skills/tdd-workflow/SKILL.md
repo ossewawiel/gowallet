@@ -31,6 +31,15 @@ Never write production code before a failing test. Hold this line.
 `gofmt` ✓ · `go vet` ✓ · `golangci-lint` ✓ · `go build ./...` ✓ · `go test -race ./...` ✓ ·
 `schemathesis run` ✓ · the slice's `ACCEPTANCE.md` rows ✓ · `PROMPT_LOG.md` updated ✓.
 
+### Windows runbook (use the PowerShell tool — see CLAUDE.md "Running the gates on Windows")
+- **`-race` needs cgo + MinGW** (default env is `CGO_ENABLED=0`). Prefix every race run:
+  `$env:Path = "C:\Users\User-PC\scoop\apps\mingw\current\bin;$env:Path"; $env:CGO_ENABLED = "1"`.
+- **Schemathesis ALWAYS runs with a Bearer token** — protected routes 401 without one. Boot the
+  server with `GOWALLET_JWT_SECRET`, mint an **admin** token via `POST /token`, then:
+  `schemathesis run "http://localhost:8080/openapi.yaml" -u "http://localhost:8080" -H "Authorization: Bearer $tok" --exclude-checks negative_data_rejection` (set `PYTHONUTF8=1`).
+- **Known non-issue:** the lone `POST /token` 422 finding (role validated semantically, not as a
+  schema enum) is **expected** and is **not** a gate failure. Every other operation must pass clean.
+
 ## Acceptance registry discipline
 - Each new invariant → a row in `docs/ACCEPTANCE.md` (next `INV-n`, named test, slice, status ⬜).
 - ⬜ planned → 🟡 test written/red → ✅ green. Final testing = the whole table green at once.
