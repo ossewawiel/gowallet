@@ -27,8 +27,12 @@
   vertical-slice TDD workflow, two-layer testing (Schemathesis + Go `-race`), 3 skills, 2 subagents,
   4 commands, GitHub slice templates.
 - 🚧 **Step 3** — backlog finalized (**6 slices, S0→S5**), kickoff prompts in
-  [`docs/slices/`](docs/slices/), and **6 GitHub issues opened** (#1–#6). Build starts at
-  **[S0 / #1](https://github.com/ossewawiel/gowallet/issues/1)** — the walking skeleton.
+  [`docs/slices/`](docs/slices/), **6 GitHub issues opened** (#1–#6).
+  - ✅ **[S0 / #1](https://github.com/ossewawiel/gowallet/issues/1)** — walking skeleton **built &
+    green**: `GET /healthz` (real DB ping), WAL/PRAGMAs, goose runner, `/swagger`, the 3-package
+    layout wired end-to-end. Full quality gate passing (gofmt · vet · lint · build · `-race` ·
+    Schemathesis). On branch `slice/s0-skeleton`, PR pending.
+  - ➡️ **Next:** fan out — 🅰️ S1 (accounts + earn) · 🅱️ S3 (auth) · 🅲 S4 (audit).
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).
@@ -69,14 +73,16 @@ a fully-specced GitHub issue → a build session ships it.
 
 ## 🚀 Quickstart
 
-> ⚠️ **Not runnable yet** — the service code arrives at slice **S0** (Step 3). This section fills in
-> with real commands the moment there's something to run.
+> ✅ **Runnable as of S0** — the walking skeleton is live: health check, DB ping, and Swagger UI.
 
 ```bash
-# Coming at slice S0:
-#   go run ./cmd/gowallet          # start the API
-#   open http://localhost:8080/swagger
+go run ./cmd/gowallet                      # start the API on :8080
+curl localhost:8080/healthz                # -> {"status":"ok","db":"up"}
+open  http://localhost:8080/swagger        # browse the live contract
 ```
+
+> 🧪 Run the checks: `go test -race ./...` (needs a real gcc on the PATH for `-race` —
+> e.g. MinGW; `CGO_ENABLED=1`).
 
 ---
 
@@ -93,4 +99,4 @@ gowallet/
 ├── .github/             ← issue templates
 └── .vscode/             ← shared editor config (Go + gopls)
 ```
-_(application code — `cmd/`, `internal/`, `api/`, `test/` — lands in Step 3.)_
+_(application code — `cmd/`, `internal/`, `api/`, `test/` — landed at S0 and grows per slice.)_

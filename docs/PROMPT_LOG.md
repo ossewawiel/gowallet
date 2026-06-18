@@ -173,4 +173,82 @@ the walking skeleton, via `/design-slice`).
   issue → `/build-slice` ships it. Build starts at **S0 (#1)**.
 - 🔗 **Artifacts:** docs/slices/*.md · GitHub issues #1–#6 · .claude/commands/design-slice.md
 
+### ⏱️ 2026-06-18 · Entry 10 — S0 designed (walking skeleton, design-only)
+
+- 🧑 **Asked:** Run `/design-slice` for **S0** — the walking skeleton (architecture tracer bullet).
+  Design-only; no production code yet.
+- 🔎 **Explored:**
+  - **INV-n rows for S0?** → ❌ No. `docs/ACCEPTANCE.md` is scoped to *business + concurrency*
+    invariants; S0 has neither (it's the structural tracer). The S0 slice doc already says
+    "Invariants: none." So no rows added.
+  - **Does `/healthz` belong in the OpenAPI contract?** → ✅ Yes, so Schemathesis can fuzz it.
+    `/openapi.yaml` and `/swagger` stay **infra routes**, not spec paths.
+  - **Empty initial goose migration?** → ✅ Yes, intentionally empty (`SELECT 1` up/down). goose still
+    creates `goose_db_version` on startup, which the acceptance test asserts — proves the runner works
+    **without inventing tables S1 owns**.
+  - **Seed the shared Error envelope now?** → ✅ Yes, even though `/healthz` doesn't need it — so every
+    later slice reuses **one** error shape (per REST guidelines).
+  - **Health seam design:** `wallet` defines a `Pinger` interface + `HealthService`; `sqlitestore`
+    implements `Pinger` via `*sql.DB.PingContext`; `httpapi` calls `wallet`. Proves the layering
+    direction `httpapi → wallet ← sqlitestore` through a trivial path.
+- 🤖 **Did:** Read the S0 slice doc + `ARCHITECTURE.md`, `ACCEPTANCE.md`, `SLICES.md`,
+  `REST_API_GUIDELINES.md`, `DEVELOPMENT_FLOW.md`, and the slice issue template. Confirmed the repo has
+  **no `go.mod`/`api/` yet** (S0 creates them). **Enriched GitHub issue #1** (was just the kickoff
+  prompt) with the full build spec: OpenAPI fragment (`/healthz` + Health + Error schemas), timestamped
+  goose migration (`20260618000000_init.sql`), domain/health seam, a **7-test red list**, acceptance
+  criteria, and build order. Issue updated via `gh issue edit 1 --body-file`.
+- ✅ **Accepted:** the full S0 design above.
+- ❌ **Rejected:** adding `INV-n` rows for S0 — no business/concurrency invariant exists to prove.
+- 💡 **Why:** S0 is a **kept walking skeleton** (Cockburn), not a throwaway spike — nailing the
+  3-package wiring + DB PRAGMAs + migration runner *once* means every later slice slots in. Tests still
+  ship (health path, PRAGMAs, migration runner) so production habits hold from line one.
+- 📚 `docs/ARCHITECTURE.md` (3-package layout, PRAGMAs, wire-crossing rule) · `docs/DEVELOPMENT_FLOW.md`
+  (TDD loop) · `docs/REST_API_GUIDELINES.md` (error envelope, status codes) · `docs/ACCEPTANCE.md`
+  (invariant scope).
+- 🔗 **Artifacts:** GitHub issue #1 (enriched) — https://github.com/ossewawiel/gowallet/issues/1 ·
+  no code commits (design-only).
+
+### ⏱️ 2026-06-18 · Entry 11 — S0 built (walking skeleton, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice` for **S0** (issue #1) — strict spec-first TDD. First slice, so
+  scaffold the repo from scratch.
+- 🔎 **Explored / decisions in-build:**
+  - **Schemathesis caught a real contract nit:** `GET /healthz` with a bad method returned `405`
+    but **no `Allow` header** — RFC 9110 wants one. Fixed with a `MethodNotAllowed` handler that
+    sets `Allow`, plus an **8th test** `TestHealthz_405_HasAllowHeader` — wrote the failing test
+    *first*, then re-greened. TDD held even for the contract fix. ✅
+  - **Hand-written JSON bytes for `/healthz`** (not `json.Marshal` of a map) — guarantees key order
+    matches the spec example byte-for-byte. ✅
+  - **PRAGMAs ride on the SQLite DSN**; write path pins `SetMaxOpenConns(1)`. ✅
+  - **Layering verified with `go list -deps`:** `httpapi` imports `wallet` + `gen`, **never**
+    `sqlitestore`; `wallet` imports nothing internal. The arrow `httpapi → wallet ← sqlitestore`
+    holds structurally, not just by convention. ✅
+- 🤖 **Did:** Branched `slice/s0-skeleton` off `main`. Scaffolded the repo:
+  - `go.mod` (module `github.com/ossewawiel/gowallet`, Go 1.26.4)
+  - `api/openapi.yaml` (`/healthz` + shared `Error` envelope)
+  - `oapi-codegen` strict chi-server output → `internal/httpapi/gen/`
+  - `internal/httpapi` (router, middleware, `health.go`, `errors.go` envelope + 404/405,
+    `infra.go` for `/openapi.yaml` + `/swagger`)
+  - `internal/wallet` (`Pinger`, `Health`, `HealthService`)
+  - `internal/sqlitestore` (`Open` w/ PRAGMAs, `Migrate` via goose, `Ping`) + timestamped empty
+    migration `20260618000000_init.sql`
+  - `cmd/gowallet/main.go` wiring it all together
+  - **8 tests** (7 from the issue + the 405 one). Loop: red → green → refactor → full quality gate.
+- ✅ **Accepted:** every gate green — `gofmt` clean · `go vet` 0 · `golangci-lint` 0 issues ·
+  `go build` ok · `go test -race` ok · Schemathesis **9 cases, no issues**. All S0 acceptance
+  criteria met.
+- 💡 **Why:** S0 is a **kept** walking skeleton, not a spike — getting the 3-package wiring +
+  PRAGMAs + migration runner right *once* means every later slice slots straight in.
+- 🛠️ **Tooling notes worth keeping:**
+  - `-race` on Windows needs a **real gcc** — installed MinGW **gcc 16.1.0** via `scoop install
+    mingw` (Go rejects MSVC-targeted clang's `-mthreads`). Future race runs: put
+    `C:\Users\User-PC\scoop\apps\mingw\current\bin` on PATH + `CGO_ENABLED=1`.
+  - Schemathesis (Python) needs `PYTHONUTF8=1` on cp1252 consoles.
+- 📚 GitHub issue #1 (the build spec) · `docs/ARCHITECTURE.md` · `docs/DEVELOPMENT_FLOW.md` ·
+  `docs/REST_API_GUIDELINES.md` · RFC 9110 (`Allow` header on 405).
+- 🔗 **Artifacts:** branch `slice/s0-skeleton` (not yet pushed/committed at time of writing) ·
+  files created — `go.mod`, `go.sum`, `api/openapi.yaml`, `internal/httpapi/*` (+`gen`),
+  `internal/wallet/health.go`, `internal/sqlitestore/*` (+migration), `cmd/gowallet/main.go`,
+  tests in `internal/*/*_test.go` + `test/acceptance/healthz_test.go`. Closes #1 once the PR merges.
+
 <!-- New entries go below this line -->
