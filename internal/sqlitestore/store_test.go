@@ -159,6 +159,158 @@ func TestStore_InsertDuplicateRef_SecondIsNoOp(t *testing.T) {
 	}
 }
 
+// auditEntry builds an AuditEntry for the store tests.
+func auditEntry(ref, accountID string, outcome wallet.AuditOutcome, reason string) wallet.AuditEntry {
+	return wallet.AuditEntry{
+		Ref:       ref,
+		AccountID: accountID,
+		Kind:      "earn",
+		Points:    10,
+		Outcome:   outcome,
+		Reason:    reason,
+	}
+}
+
+// TestAudit_RecordsEachAttempt (INV-11) — each attempt (accepted / rejected /
+// duplicate) is recorded and reads back with its reason and a parseable,
+// non-zero created_at.
+func TestAudit_RecordsEachAttempt(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		ref     string
+		outcome wallet.AuditOutcome
+		reason  string
+	}{
+		{"a-1", wallet.OutcomeAccepted, "ok"},
+		{"a-2", wallet.OutcomeRejected, "account not found"},
+		{"a-3", wallet.OutcomeDuplicate, "duplicate ref"},
+	}
+	for _, c := range cases {
+		got, err := store.AppendAudit(ctx, auditEntry(c.ref, "member-1", c.outcome, c.reason))
+		if err != nil {
+			t.Fatalf("AppendAudit %s: %v", c.ref, err)
+		}
+		if got.ID == 0 {
+			t.Fatalf("AppendAudit %s: want assigned id, got 0", c.ref)
+		}
+		if got.Reason != c.reason {
+			t.Fatalf("AppendAudit %s: reason want %q, got %q", c.ref, c.reason, got.Reason)
+		}
+		if got.CreatedAt.IsZero() {
+			t.Fatalf("AppendAudit %s: created_at is zero", c.ref)
+		}
+	}
+
+	list, err := store.ListAudit(ctx, "")
+	if err != nil {
+		t.Fatalf("ListAudit: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("ListAudit: want 3 rows, got %d", len(list))
+	}
+	for _, e := range list {
+		if e.Reason == "" || e.CreatedAt.IsZero() {
+			t.Fatalf("row %q: want non-empty reason + non-zero created_at, got reason=%q created_at=%v", e.Ref, e.Reason, e.CreatedAt)
+		}
+	}
+}
+
+// TestAudit_AppendOnly_SameRefTwice (INV-22) — the same ref recorded twice yields
+// two distinct rows (no UNIQUE(ref) collision — the opposite of transactions).
+func TestAudit_AppendOnly_SameRefTwice(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	first, err := store.AppendAudit(ctx, auditEntry("tx-1", "member-1", wallet.OutcomeAccepted, "first"))
+	if err != nil {
+		t.Fatalf("first AppendAudit: %v", err)
+	}
+	second, err := store.AppendAudit(ctx, auditEntry("tx-1", "member-1", wallet.OutcomeDuplicate, "second"))
+	if err != nil {
+		t.Fatalf("second AppendAudit: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("append-only: want distinct ids, both got %d", first.ID)
+	}
+
+	list, err := store.ListAudit(ctx, "")
+	if err != nil {
+		t.Fatalf("ListAudit: %v", err)
+	}
+	var withRef int
+	for _, e := range list {
+		if e.Ref == "tx-1" {
+			withRef++
+		}
+	}
+	if withRef != 2 {
+		t.Fatalf("append-only: want 2 rows with ref tx-1, got %d", withRef)
+	}
+}
+
+// TestAudit_ListNewestFirst — rows come back ordered by id DESC (newest first).
+func TestAudit_ListNewestFirst(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	refs := []string{"r-1", "r-2", "r-3"}
+	for _, ref := range refs {
+		if _, err := store.AppendAudit(ctx, auditEntry(ref, "member-1", wallet.OutcomeAccepted, "ok")); err != nil {
+			t.Fatalf("AppendAudit %s: %v", ref, err)
+		}
+	}
+
+	list, err := store.ListAudit(ctx, "")
+	if err != nil {
+		t.Fatalf("ListAudit: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("ListAudit: want 3, got %d", len(list))
+	}
+	// Newest-first → reverse insertion order, and strictly descending ids.
+	want := []string{"r-3", "r-2", "r-1"}
+	for i, e := range list {
+		if e.Ref != want[i] {
+			t.Fatalf("newest-first: position %d want %q, got %q", i, want[i], e.Ref)
+		}
+		if i > 0 && list[i-1].ID <= e.ID {
+			t.Fatalf("newest-first: ids not strictly descending at %d (%d <= %d)", i, list[i-1].ID, e.ID)
+		}
+	}
+}
+
+// TestAudit_ListByAccount_FiltersAndNoLeak — filtering by account returns only
+// that account's rows; no cross-account leak.
+func TestAudit_ListByAccount_FiltersAndNoLeak(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	if _, err := store.AppendAudit(ctx, auditEntry("m1-a", "member-1", wallet.OutcomeAccepted, "ok")); err != nil {
+		t.Fatalf("append m1-a: %v", err)
+	}
+	if _, err := store.AppendAudit(ctx, auditEntry("m2-a", "member-2", wallet.OutcomeAccepted, "ok")); err != nil {
+		t.Fatalf("append m2-a: %v", err)
+	}
+	if _, err := store.AppendAudit(ctx, auditEntry("m1-b", "member-1", wallet.OutcomeRejected, "no")); err != nil {
+		t.Fatalf("append m1-b: %v", err)
+	}
+
+	got, err := store.ListAudit(ctx, "member-1")
+	if err != nil {
+		t.Fatalf("ListAudit member-1: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("filter member-1: want 2 rows, got %d", len(got))
+	}
+	for _, e := range got {
+		if e.AccountID != "member-1" {
+			t.Fatalf("filter leak: got row for %q", e.AccountID)
+		}
+	}
+}
+
 func TestStore_Balance_DerivedFromRows(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()

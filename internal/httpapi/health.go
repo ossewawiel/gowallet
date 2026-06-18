@@ -13,6 +13,7 @@ import (
 type server struct {
 	health    *wallet.HealthService
 	wallet    *wallet.WalletService
+	audit     *wallet.AuditService
 	jwtSecret string
 	jwtTTL    time.Duration
 }

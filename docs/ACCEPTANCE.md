@@ -37,6 +37,7 @@ final testing = every row here is green at once.
 | INV-19 | Transaction list is **account-scoped**: member sees **own only** (else 403), admin sees any | `TestListTransactions_MemberOwnOnly`, `TestListTransactions_AdminAny` | S7 | ⬜ |
 | INV-20 | Transaction list returns **only that account's** transactions (no cross-account leak), newest-first | `TestListTransactions_NoCrossAccountLeak` | S7 | ⬜ |
 | INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ⬜ |
+| INV-22 | The audit log is **append-only**: the same `ref` recorded twice yields two distinct rows (no idempotency collision — opposite of the `transactions` table) | `TestAudit_AppendOnly_SameRefTwice` | S4 | ⬜ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 

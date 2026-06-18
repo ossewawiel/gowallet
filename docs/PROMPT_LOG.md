@@ -550,4 +550,44 @@ the walking skeleton, via `/design-slice`).
   not-yet-built S4.
 - 🔗 **Artifacts:** docs/slices/S4.md · GitHub issue #5 (synced) · ACCEPTANCE INV-21 · SLICES.md.
 
+### ⏱️ 2026-06-18 · Entry 21 — S4 designed (Audit trail, design-only)
+
+- 🧑 **Asked:** `/design-slice S4` — Audit trail: a durable, append-only record of every txn attempt
+  (reason + timestamp), an **admin-only `GET /audit`**, and a writer service S5 can lean on.
+- 🔎 **Explored — scope:** build the audit *machinery* standalone (table + `AuditService` writer +
+  `GET /audit`) but **don't** wire it into `POST /transactions` in S4. The classic trap — "audit must
+  never change the correctness of the money path" — is honored trivially by *not touching* it. The
+  brief only requires auditing the **batch** attempts, so **S5 (CSV batch)** becomes the writer's
+  first real caller. Keeps S4 standalone + shippable.
+- ✅ **Accepted — table design, 3 deliberate breaks from `transactions`:**
+
+  | Field | `transactions` | `audit_log` | Why the difference |
+  |-------|----------------|-------------|--------------------|
+  | `ref` | `UNIQUE` (idempotency) | **not unique** | append-only — duplicates are *events to record* |
+  | `account_id` | FK to accounts | **no FK** | must record attempts against *unknown* accounts |
+  | `kind` / `points` | constrained | **unconstrained** | faithfully record a *rejected* attempt, invalid values and all |
+  | `outcome` | — | `CHECK(outcome IN ('accepted','rejected','duplicate'))` | our one controlled vocabulary |
+
+- ✅ **Accepted — newest-first = `ORDER BY id DESC`**, not `created_at DESC`: `created_at` is only
+  second-precision, so same-second rows tie; the `AUTOINCREMENT` id is strictly monotonic.
+- ✅ **Accepted — `AuditEntry.kind` is a free string** in the OpenAPI schema (not the `earn|spend`
+  enum) so a rejected row carrying an invalid kind doesn't violate its *own* contract.
+- ✅ **Accepted — `GET /audit` returns a bare array** (`AuditLog`) — no pagination at demo scale,
+  simplest thing for Schemathesis to chew on.
+- ✅ **Accepted — admin-only via a new `requireAdmin(r)` transport helper**: identity from the
+  verified token in context, **never** the URL. Reusable by S7's admin-only `GET /accounts`. `/audit`
+  stays protected-by-default.
+- ✅ **Accepted — new invariant INV-22** (append-only) on top of the pre-existing INV-11 / INV-21.
+- 🤖 **Did:** enriched **GitHub issue #5** with the full design — OpenAPI fragment, timestamped
+  migration `20260618130000_s4_audit_log.sql`, sqlc queries, domain/handler sketch, red-test list,
+  and acceptance criteria. Acceptance seeding note: with **no HTTP write path** for audit in S4, a
+  `bootRealAppWithStore` helper seeds rows via `store.AppendAudit`, then asserts through `GET /audit`.
+  **No production code written — design only.**
+- 💡 **Why:** the money path is the crown jewel; keeping audit a side-table with its own loose
+  constraints means an audit failure can never corrupt a balance, and the writer is ready the moment
+  S5 needs it.
+- 🔗 **Artifacts:** GitHub issue #5 (https://github.com/ossewawiel/gowallet/issues/5) ·
+  planned migration `internal/sqlitestore/migrations/20260618130000_s4_audit_log.sql` ·
+  ACCEPTANCE INV-22.
+
 <!-- New entries go below this line -->

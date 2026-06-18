@@ -21,6 +21,44 @@ func (q *Queries) AccountExists(ctx context.Context, accountID string) (bool, er
 	return present, err
 }
 
+const appendAuditEntry = `-- name: AppendAuditEntry :one
+INSERT INTO audit_log (ref, account_id, kind, points, outcome, reason)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, ref, account_id, kind, points, outcome, reason, created_at
+`
+
+type AppendAuditEntryParams struct {
+	Ref       string
+	AccountID string
+	Kind      string
+	Points    int64
+	Outcome   string
+	Reason    string
+}
+
+func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryParams) (AuditLog, error) {
+	row := q.db.QueryRowContext(ctx, appendAuditEntry,
+		arg.Ref,
+		arg.AccountID,
+		arg.Kind,
+		arg.Points,
+		arg.Outcome,
+		arg.Reason,
+	)
+	var i AuditLog
+	err := row.Scan(
+		&i.ID,
+		&i.Ref,
+		&i.AccountID,
+		&i.Kind,
+		&i.Points,
+		&i.Outcome,
+		&i.Reason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const balanceForAccount = `-- name: BalanceForAccount :one
 SELECT CAST(COALESCE(SUM(CASE WHEN kind = 'earn' THEN points ELSE -points END), 0) AS INTEGER) AS balance
 FROM transactions
@@ -108,4 +146,81 @@ func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionPa
 		arg.Points,
 		arg.OccurredAt,
 	)
+}
+
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, ref, account_id, kind, points, outcome, reason, created_at
+FROM audit_log
+ORDER BY id DESC
+`
+
+func (q *Queries) ListAuditLog(ctx context.Context) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLog)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ref,
+			&i.AccountID,
+			&i.Kind,
+			&i.Points,
+			&i.Outcome,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLogByAccount = `-- name: ListAuditLogByAccount :many
+SELECT id, ref, account_id, kind, points, outcome, reason, created_at
+FROM audit_log
+WHERE account_id = ?
+ORDER BY id DESC
+`
+
+func (q *Queries) ListAuditLogByAccount(ctx context.Context, accountID string) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLogByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ref,
+			&i.AccountID,
+			&i.Kind,
+			&i.Points,
+			&i.Outcome,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

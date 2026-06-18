@@ -22,6 +22,7 @@ import (
 type Deps struct {
 	Health    *wallet.HealthService
 	Wallet    *wallet.WalletService
+	Audit     *wallet.AuditService
 	SpecYAML  []byte
 	JWTSecret string
 	JWTTTL    time.Duration
@@ -64,6 +65,7 @@ func NewRouter(deps Deps) http.Handler {
 	srv := &server{
 		health:    deps.Health,
 		wallet:    deps.Wallet,
+		audit:     deps.Audit,
 		jwtSecret: deps.JWTSecret,
 		jwtTTL:    deps.JWTTTL,
 	}

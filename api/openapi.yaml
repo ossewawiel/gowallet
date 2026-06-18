@@ -155,6 +155,27 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /audit:
+    get:
+      operationId: listAudit
+      summary: List recorded transaction attempts (admin only), newest-first
+      tags: [audit]
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          description: Optional filter — only attempts recorded against this account.
+          schema: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$' }
+      responses:
+        '200':
+          description: The audit log, newest-first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLog' }
+        '400': { description: Malformed account_id query parameter., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
 components:
   responses:
     # Shared auth responses, referenced by every protected operation so the
@@ -246,6 +267,25 @@ components:
       properties:
         status: { type: string, enum: [ok, degraded] }
         db:     { type: string, enum: [up, down] }
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, ref, account_id, kind, points, outcome, reason, created_at]
+      properties:
+        id:         { type: integer, format: int64, example: 1 }
+        ref:        { type: string, example: tx-001 }
+        account_id: { type: string, example: member-123 }
+        # kind is a FREE string here (not the earn|spend enum): the audit log is a
+        # faithful record of what was *attempted* — a rejected batch row (S5) may
+        # carry an invalid kind, and we still record the attempt + its reason.
+        kind:       { type: string, example: earn }
+        points:     { type: integer, format: int64, example: 150 }
+        outcome:    { type: string, enum: [accepted, rejected, duplicate] }
+        reason:     { type: string, example: "ok" }
+        created_at: { type: string, format: date-time }
+    AuditLog:
+      type: array
+      items: { $ref: '#/components/schemas/AuditEntry' }
     Error:
       description: Single error envelope used across the whole API (RFC 9457-ish, trimmed).
       type: object

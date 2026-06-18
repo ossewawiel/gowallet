@@ -10,6 +10,17 @@ type Account struct {
 	CreatedAt string
 }
 
+type AuditLog struct {
+	ID        int64
+	Ref       string
+	AccountID string
+	Kind      string
+	Points    int64
+	Outcome   string
+	Reason    string
+	CreatedAt string
+}
+
 type Transaction struct {
 	ID         int64
 	Ref        string

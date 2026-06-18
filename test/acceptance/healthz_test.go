@@ -25,6 +25,16 @@ const acceptanceSecret = "acceptance-test-secret"
 // on-disk SQLite file, and returns a live test server.
 func bootRealApp(t *testing.T) *httptest.Server {
 	t.Helper()
+	srv, _ := bootRealAppWithStore(t)
+	return srv
+}
+
+// bootRealAppWithStore is bootRealApp plus the live *sqlitestore.Store, so
+// acceptance tests can seed rows the API has no write path for (S4 audit: the
+// log is written internally by AuditService, never by an HTTP client — tests
+// seed via store.AppendAudit then assert via GET /audit).
+func bootRealAppWithStore(t *testing.T) (*httptest.Server, *sqlitestore.Store) {
+	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "acceptance.db")
 	store, err := sqlitestore.Open(dbPath)
@@ -45,6 +55,7 @@ func bootRealApp(t *testing.T) *httptest.Server {
 	router := httpapi.NewRouter(httpapi.Deps{
 		Health:    wallet.NewHealthService(store),
 		Wallet:    wallet.NewWalletService(store, store),
+		Audit:     wallet.NewAuditService(store),
 		SpecYAML:  specYAML,
 		JWTSecret: acceptanceSecret,
 		JWTTTL:    time.Hour,
@@ -52,7 +63,7 @@ func bootRealApp(t *testing.T) *httptest.Server {
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, store
 }
 
 // authPostJSON POSTs a JSON body to url with a Bearer token.
