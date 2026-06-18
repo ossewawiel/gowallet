@@ -120,6 +120,7 @@ and reach for these exact locations:
 | Tool | Where | Notes |
 |------|-------|-------|
 | `go` | on PowerShell PATH (`go1.26.x`) | **not** on the bash PATH — use PowerShell |
+| `gh` (GitHub CLI) | on PowerShell PATH | **not** on the bash PATH — run `gh issue view`, `gh pr …` etc. via the **PowerShell** tool |
 | `oapi-codegen` | `C:\Users\User-PC\go\bin\oapi-codegen.exe` | `oapi-codegen -config internal/httpapi/gen/config.yaml api/openapi.yaml` |
 | `sqlc` | `C:\Users\User-PC\go\bin\sqlc.exe` | `sqlc generate` (only when a query/schema changed) |
 | `golangci-lint` | `C:\Users\User-PC\go\bin\golangci-lint.exe` | |

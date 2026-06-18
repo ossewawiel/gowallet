@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S2%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S4%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -51,8 +51,17 @@
     proven** (16 concurrent spends never overdraw, under `-race`). 🎉 **The earn + spend core spine
     is now complete.** On branch `slice/s2-spend` — merging to `main` via
     [PR #11](https://github.com/ossewawiel/gowallet/pull/11) (Closes #3).
-  - ➡️ **Next:** the core spine (🅰️ S1 earn + S2 spend · 🅱️ S3 auth) is **done**. Remaining: 🅲 **S4 —
-    Audit trail** (INV-11), then 🅲 **S5 — CSV batch ingest** (INV-9/10, needs **S2 + S4**).
+  - ✅ **[S4 / #5](https://github.com/ossewawiel/gowallet/issues/5)** — audit trail **built & green**:
+    a durable, **append-only** `audit_log` (the deliberate opposite of `transactions` — `ref` *not*
+    unique, no FK, no kind/points CHECK, only `outcome` constrained) + an `AuditService` writer and an
+    **admin-only `GET /audit`** (optional `?account_id=` filter, newest-first via `id DESC`). The money
+    path is **byte-for-byte unchanged** — audit runs in its own insert, never inside the money `sql.Tx`.
+    **INV-11/21/22 proven**; full quality gate green (gofmt · vet · lint **0 issues** · build · `-race`
+    · Schemathesis clean incl. stateful on the new route). On branch `slice/s4-audit` (commit `fbd8d8a`,
+    ready for PR).
+  - ➡️ **Next:** with **S2 + S4 both landed**, 🅲 **S5 — CSV batch ingest** (INV-9/10) is now
+    **unblocked** — the `AuditService` writer is ready for its first real caller. Also queued: 🅰️
+    **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13)).
   - 🔑 **Backlog +1:** 🅱️ **S6 — Login** (credential-based token issuance,
     [#10](https://github.com/ossewawiel/gowallet/issues/10)) — a real `POST /login` replacing the S3
     demo mint; seeds demo creds (see **🔑 Test credentials** below).

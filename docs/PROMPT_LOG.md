@@ -590,4 +590,47 @@ the walking skeleton, via `/design-slice`).
   planned migration `internal/sqlitestore/migrations/20260618130000_s4_audit_log.sql` ·
   ACCEPTANCE INV-22.
 
+### ⏱️ 2026-06-18 · Entry 22 — S4 built (Audit trail, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 5` — build **S4** (audit trail) end-to-end with strict spec-first
+  TDD (red → green → refactor → prove).
+- 🔎 **Explored / decisions in-build:**
+  - **The money path stays untouched.** Audit is its own side-table written by its own insert,
+    **never** inside the money `sql.Tx`. So an audit failure can't corrupt a balance — the golden
+    rule holds by *not touching* the crown jewel. ✅ verified: `git diff main` on `wallet.go`,
+    `sqlitestore/accounts.go`, and `httpapi/accounts.go` is **empty** — the earn/spend path is
+    byte-for-byte unchanged.
+  - **`audit_log` deliberately loosens the `transactions` constraints** (as designed in Entry 21):
+    `ref` **not unique** (append-only), **no FK** on `account_id` (must record attempts against
+    unknown accounts), **no CHECK** on `kind`/`points` (faithfully record a rejected attempt, junk
+    values and all), and the *one* controlled vocabulary — `outcome CHECK`-constrained.
+- 🤖 **Did:** Branched `slice/s4-audit`. **RED first** — the build broke on the regenerated
+  `ServerInterface` now requiring `ListAudit`, and `wallet`/store tests failed on undefined
+  `AuditEntry`/`AuditOutcome` → **GREEN** (min code) → small refactor. Added `GET /audit` +
+  `AuditEntry`/`AuditLog` schemas to `api/openapi.yaml` (regen via `oapi-codegen`); timestamped
+  migration `20260618130000_s4_audit_log.sql`; `sqlc` queries `AppendAuditEntry` / `ListAuditLog` /
+  `ListAuditLogByAccount`; `wallet.AuditService` (append-only writer, validates outcome) +
+  `AuditRepository`; `sqlitestore` impl; `internal/httpapi/audit.go` `ListAudit` handler + a new
+  `requireAdmin` helper in `identity.go`; wired `Audit` into `httpapi.Deps` + `main.go`; factored a
+  `bootRealAppWithStore` helper into the acceptance harness (no HTTP write path for audit in S4, so
+  it seeds rows via the store, then asserts through `GET /audit`).
+- 🧪 **Tests added:**
+  - **domain** — `TestAuditService_Record_ValidatesOutcome`, `TestAuditService_Record_AppendsEveryCall`;
+  - **store** — `TestAudit_RecordsEachAttempt` (**INV-11**), `TestAudit_AppendOnly_SameRefTwice`
+    (**INV-22**), `TestAudit_ListNewestFirst`, `TestAudit_ListByAccount_FiltersAndNoLeak`;
+  - **acceptance** — `TestListAudit_AdminOnly` (**INV-21**), `TestListAudit_RecordsShape`
+    (**INV-21**), `TestListAudit_NoToken_401`.
+- ✅ **Accepted:** quality gate **green** — gofmt · go vet · golangci-lint **0 issues** ·
+  `go build ./...` · `go test -race ./...` (all packages) · Schemathesis (the new `GET /audit`
+  passed clean in every phase incl. **stateful**). **INV-11 / INV-21 / INV-22 proven.**
+- ⚠️ **Note:** the pre-existing `POST /token` **422** (semantic role validation, Entry 15) is the
+  documented non-issue — unrelated to S4.
+- 💡 **Why:** keeping audit a side-table with loose constraints + its own insert means an audit
+  failure can never touch a balance, and the `AuditService` writer is ready the moment **S5 (CSV
+  batch)** needs its first real caller.
+- 🔗 **Artifacts:** branch `slice/s4-audit` · commit `fbd8d8a` · migration
+  `internal/sqlitestore/migrations/20260618130000_s4_audit_log.sql` · `internal/wallet/audit.go` ·
+  `internal/httpapi/audit.go` · `internal/httpapi/identity.go` (`requireAdmin`) · `api/openapi.yaml`
+  · issue #5 (closes #5 once the PR merges).
+
 <!-- New entries go below this line -->

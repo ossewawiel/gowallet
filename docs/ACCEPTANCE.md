@@ -26,7 +26,7 @@ final testing = every row here is green at once.
 | INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S3 | ✅ |
 | INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S5 | ⬜ |
 | INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S5 | ⬜ |
-| INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ⬜ |
+| INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ✅ |
 | INV-12 | Algorithm is **pinned**: a token with `alg:none` or any non-HS256 algorithm is rejected (401) — defeats alg:none / RS↔HS confusion | `TestVerify_AlgNone_Rejected`, `TestVerify_NonHS256_Rejected`, `TestAuth_AlgConfusion_Rejected` | S3 | ✅ |
 | INV-13 | Identity is sourced from the **verified token only** — a body/URL `account_id` that disagrees never grants access | `TestAuth_IdentityFromTokenOnly` | S3 | ✅ |
 | INV-14 | Valid credential (`account_id` + correct `secret`) → 200 with a JWT whose `role` = the account's **stored** role | `TestLogin_ValidCredential_IssuesToken` | S6 | ⬜ |
@@ -36,8 +36,8 @@ final testing = every row here is green at once.
 | INV-18 | `GET /accounts` (list all) is **admin-only** — a member gets **403** | `TestListAccounts_AdminOnly`, `TestListAccounts_Member_Forbidden` | S7 | ⬜ |
 | INV-19 | Transaction list is **account-scoped**: member sees **own only** (else 403), admin sees any | `TestListTransactions_MemberOwnOnly`, `TestListTransactions_AdminAny` | S7 | ⬜ |
 | INV-20 | Transaction list returns **only that account's** transactions (no cross-account leak), newest-first | `TestListTransactions_NoCrossAccountLeak` | S7 | ⬜ |
-| INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ⬜ |
-| INV-22 | The audit log is **append-only**: the same `ref` recorded twice yields two distinct rows (no idempotency collision — opposite of the `transactions` table) | `TestAudit_AppendOnly_SameRefTwice` | S4 | ⬜ |
+| INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ✅ |
+| INV-22 | The audit log is **append-only**: the same `ref` recorded twice yields two distinct rows (no idempotency collision — opposite of the `transactions` table) | `TestAudit_AppendOnly_SameRefTwice` | S4 | ✅ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 
