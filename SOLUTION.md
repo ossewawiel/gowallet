@@ -30,10 +30,16 @@ Each decision below was made after weighing alternatives. The full reasoning and
 | D5 | **OpenAPI 3 + Swagger UI** | Hand-written docs, Postman collection | Living, testable API docs; reviewers can click-to-call endpoints. |
 | D6 | **Strict TDD** + Playwright for end-to-end | Test-after | Correctness is the whole point of a wallet; tests are the spec. |
 | D7 | **Docker** for portable runs | Local-only | "Runs anywhere" without requiring a Go install on the reviewer's box. |
+| D8 | **stdlib `net/http` (1.22) + `chi`** | gin / echo / fiber | Stdlib now does method routing; chi adds middleware + sub-routers without framework lock-in. Idiomatic, minimal deps. |
+| D9 | **Spec-first `oapi-codegen`** (strict-server) + `kin-openapi` | code-first (Huma/swaggo), hand-rolled | `api/openapi.yaml` is the single source of truth *and* the TDD target; codegen keeps code and spec in lockstep. |
+| D10 | **`sqlc`** + **`goose`** (timestamped) | GORM, sqlx | Type-safe SQL, zero runtime reflection; timestamped migrations survive parallel branches. |
+| D11 | **JWT HS256** (`golang-jwt`, method-pinned) | opaque tokens, PASETO, RS256 | Single service signs + verifies → symmetric is correct; `WithValidMethods` kills alg-confusion. `role`+`sub` claims for member/admin. |
+| D12 | **Schemathesis** (contract) + Go **`-race`** (invariants) | Playwright on contract, Dredd | Two-layer source of truth: spec-fuzz for shapes, race tests for business rules + concurrency. |
+| D13 | **Issue-driven vertical slices**, 3 streams, auth midstream | one-shot build | Each GitHub issue fully specs a slice so a fresh agent session builds with no re-design. |
 
-> 🔭 **Still open (Step 3):** HTTP router choice (stdlib `net/http` vs a light router like `chi`),
-> auth token shape (`member`/`admin`), and the exact concurrency strategy (single-writer +
-> `busy_timeout` + WAL, transactions, and a `UNIQUE(ref)` constraint for idempotency).
+> ✅ **Resolved in Step 2** (these were "open"): router = stdlib + chi, auth = JWT HS256, concurrency
+> = WAL + `busy_timeout` + single-writer + `UNIQUE(ref)`. **Step 3 is execution** — building the
+> slices in `docs/SLICES.md` via the issue-driven TDD flow (`docs/DEVELOPMENT_FLOW.md`).
 
 ---
 

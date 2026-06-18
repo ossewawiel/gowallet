@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🏗️ Architecture & conventions
+    url: https://github.com/ossewawiel/gowallet/blob/main/docs/ARCHITECTURE.md
+    about: Read the layering, project layout, and DB rules before filing.
+  - name: 🍰 Slice backlog & dependency graph
+    url: https://github.com/ossewawiel/gowallet/blob/main/docs/SLICES.md
+    about: Check the planned slices, streams, and what depends on what.
+  - name: 🔄 Development flow
+    url: https://github.com/ossewawiel/gowallet/blob/main/docs/DEVELOPMENT_FLOW.md
+    about: How a slice goes from issue to shipped (TDD, quality gate).

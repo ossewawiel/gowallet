@@ -76,4 +76,38 @@ Answers to the interrogation, which set the project's direction:
 **Step 1 outcome:** environment ready, repo live, recording in place. ➡️ Next: **Step 2 — dev system**
 (project layout, TDD harness, OpenAPI/Swagger, Docker, CI).
 
+## Step 2 — Dev system
+
+### ⏱️ 2026-06-18 · Entry 05 — Stack locked + development system built ✅
+
+- 🧑 **Asked:** What Go libs/frameworks to use, then set up CLAUDE.md, skills, subagents, GitHub
+  issue templates, and an issue-driven, vertical-slice, TDD workflow. Tone: casual banter, low
+  lingo, visual output — *going forward, always*.
+- 🤖 **Did:** Ran a two-round interrogation with primary sources, then locked the stack and built
+  the system.
+
+  | Decision | Pick | Killed |
+  |----------|------|--------|
+  | Routing | stdlib `net/http` (1.22) + `chi` | gin / echo / fiber |
+  | API contract | spec-first `oapi-codegen` + `kin-openapi` | code-first / hand-rolled |
+  | DB access | `sqlc` + `goose` (timestamped) | GORM / sqlx |
+  | Auth | JWT **HS256** (`golang-jwt`, method pinned) | opaque / PASETO / RS256 |
+  | Testing | Schemathesis (contract) + Go `-race` (invariants) | Playwright on contract path |
+
+- ✏️ **Steered:** Source of truth = **two layers** (OpenAPI spec + `docs/ACCEPTANCE.md` invariants
+  registry). Concurrency proven by **parallel-submission `-race` tests** (no load tool). **3 parallel
+  streams**, **auth midstream**. JWT confirmed over PASETO.
+- 💡 **Why JWT HS256, not RS256:** gowallet is a single service that signs *and* verifies — RS256's
+  public-key split buys nothing here; HS256 + `WithValidMethods` is simpler and dodges alg-confusion.
+- 🤖 **Built:** `CLAUDE.md` (golden rules + house voice + prompt-log rule), 5 `docs/` guides
+  (architecture, REST, dev-flow, acceptance, slices), 3 skills (`go-architecture`,
+  `rest-api-standards`, `tdd-workflow`), 2 subagents (`doc-updater`, `tdd-runner`), 4 commands
+  (`design-slice`, `build-slice`, `quality-gate`, `log-progress`), and GitHub slice issue templates.
+- 💡 **The model:** a command pulls the right skills → which read the right docs → enforcing process
+  flow + feedback + progression. Design happens in the main session → a fully-specced GitHub issue →
+  a fresh session (`tdd-runner`) builds it with no re-design.
+
+**Step 2 outcome:** the factory is built. ➡️ Next: **Step 3 — execution** (start at slice **S0**,
+the walking skeleton, via `/design-slice`).
+
 <!-- New entries go below this line -->

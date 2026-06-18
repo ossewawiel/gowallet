@@ -1,0 +1,129 @@
+name: 🍰 Vertical slice
+description: Spec for one buildable vertical slice (one full REST cycle). Complete enough to build with zero further design questions.
+title: "Sx: <slice name>"
+labels: ["slice"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Designed via `/design-slice`. A slice = the thinnest top-to-bottom path that makes **one full
+        REST cycle** work and testable. Fill every section — a build session relies only on this issue
+        plus the skills + docs. See `docs/DEVELOPMENT_FLOW.md`.
+
+  - type: input
+    id: slice-id
+    attributes:
+      label: Slice ID
+      placeholder: "S2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stream
+    attributes:
+      label: Stream
+      description: Which parallel stream (see docs/SLICES.md)
+      options:
+        - "A — core spine"
+        - "B — security"
+        - "C — ingestion + audit"
+    validations:
+      required: true
+
+  - type: input
+    id: depends-on
+    attributes:
+      label: Depends on
+      description: Slice IDs that must be merged to main first
+      placeholder: "S1"
+
+  - type: textarea
+    id: capability
+    attributes:
+      label: Capability / user story
+      description: What can a user do once this ships?
+      placeholder: "As a member, I can earn points and see my balance move."
+    validations:
+      required: true
+
+  - type: textarea
+    id: rest-cycle
+    attributes:
+      label: REST cycle (endpoints + methods)
+      placeholder: |
+        POST /transactions   (kind=earn)  -> 201
+        GET  /accounts/{id}/balance       -> 200
+    validations:
+      required: true
+
+  - type: textarea
+    id: openapi
+    attributes:
+      label: OpenAPI fragment
+      description: New paths/schemas to add to api/openapi.yaml
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: data-model
+    attributes:
+      label: Data-model deltas (goose migration up/down)
+      description: Tables, columns, indexes — including UNIQUE(ref) etc. Timestamped migration.
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: domain-rules
+    attributes:
+      label: Domain rules & errors
+      placeholder: "Idempotent on ref (ErrDuplicateRef → 200). Balance = sum(earn)-sum(spend)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants (INV-n)
+      description: Copied from docs/ACCEPTANCE.md — each must get a proving test.
+      placeholder: |
+        - INV-1: same ref submitted again is counted once
+        - INV-5: balance persists across restart
+    validations:
+      required: true
+
+  - type: textarea
+    id: red-tests
+    attributes:
+      label: Red-test list (write these failing FIRST)
+      placeholder: |
+        - TestEarn_DuplicateRef_CountedOnce (acceptance)
+        - TestBalance_PersistsAcrossRestart (acceptance)
+        - domain: TestApplyEarn_AddsPoints (unit)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - POST earn returns 201 with the stored txn
+        - Re-POST same ref returns 200, balance unchanged
+        - GET balance reflects the earn
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: gate
+    attributes:
+      label: Quality gate (definition of done)
+      options:
+        - label: "gofmt / go vet / golangci-lint clean"
+        - label: "go build ./... passes"
+        - label: "go test -race ./... green (incl. concurrency invariants)"
+        - label: "Schemathesis run clean against the spec"
+        - label: "docs/ACCEPTANCE.md rows flipped to ✅"
+        - label: "docs/PROMPT_LOG.md entry added"
+        - label: "PR opened that Closes this issue"

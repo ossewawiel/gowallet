@@ -1,0 +1,116 @@
+# 🏗️ Architecture
+
+How gowallet is put together, and the rules that keep it clean. If CLAUDE.md is the "what,"
+this is the "where and why."
+
+---
+
+## 🎯 The shape: thin layers, one-way dependencies
+
+We use a light **hexagonal / clean-ish** layout. The point isn't dogma — it's that **business
+rules don't know about HTTP or SQL**, so we can swap SQLite → Postgres later by changing one layer.
+
+```
+            HTTP request
+                 │
+                 ▼
+   ┌─────────────────────────┐
+   │  api/      (handlers)   │   ← oapi-codegen strict server, JWT middleware, JSON in/out
+   └───────────┬─────────────┘
+               │ calls (interfaces)
+               ▼
+   ┌─────────────────────────┐
+   │  domain/   (the rules)  │   ← Account, Transaction, invariants. Imports NOTHING upward.
+   └───────────┬─────────────┘
+               │ via repository interfaces
+               ▼
+   ┌─────────────────────────┐
+   │  store/    (SQLite)     │   ← sqlc-generated queries + goose migrations
+   └─────────────────────────┘
+```
+
+**Dependency rule (one direction only):** `api → domain → store`.
+- `domain` defines interfaces like `AccountRepository`; `store` implements them.
+- `api` depends on `domain`, never on `store` directly.
+- Result: `domain` is pure Go you can unit-test with zero database.
+
+---
+
+## 📂 Project layout
+
+```
+gowallet/
+├── cmd/gowallet/main.go         # entrypoint: wire config → store → domain → api → serve
+├── api/
+│   └── openapi.yaml             # 📜 SOURCE OF TRUTH for the contract (spec-first)
+├── internal/
+│   ├── api/                     # HTTP layer
+│   │   ├── gen/                 # oapi-codegen OUTPUT (do not hand-edit)
+│   │   ├── handlers/            # strict-server interface implementations
+│   │   └── middleware/          # jwt auth, request-id, logging, recover
+│   ├── domain/                  # Account, Transaction, errors, invariants, repo interfaces
+│   ├── store/
+│   │   ├── gen/                 # sqlc OUTPUT (do not hand-edit)
+│   │   ├── queries/             # *.sql  → sqlc reads these
+│   │   ├── migrations/          # *.sql  → goose, TIMESTAMPED filenames
+│   │   └── sqlite.go            # DB open + PRAGMAs (WAL, busy_timeout)
+│   ├── auth/                    # JWT issue + verify
+│   └── csv/                     # batch ingestion + audit
+├── test/
+│   ├── acceptance/              # Go tests proving docs/ACCEPTANCE.md invariants
+│   └── schemathesis/            # schemathesis run config
+├── docs/                        # you are here
+├── .claude/                     # skills, commands, agents
+└── .github/                     # issue templates, CI
+```
+
+> 🧠 **Why `internal/`?** Go won't let anything outside this module import `internal/...`. It's a
+> compiler-enforced "private" — keeps our guts from becoming someone else's dependency.
+
+---
+
+## 🗄️ The database rules (where correctness lives)
+
+SQLite is single-writer, multi-reader. We lean into that:
+
+- **PRAGMAs on every connection:** `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`,
+  `foreign_keys=ON`. WAL lets readers run while the one writer works; `busy_timeout` waits instead
+  of erroring under contention.
+- **One writer.** Set `db.SetMaxOpenConns(1)` for the write path (or a dedicated writer handle) so
+  we never trip `SQLITE_BUSY`. Reads can use a wider pool.
+- **Invariants are constraints, not vibes:**
+  - `transactions.ref` has a **`UNIQUE`** index → the same `ref` physically can't be stored twice.
+  - Balance is changed **inside the same transaction** that records the spend; the no-negative
+    check and the write are atomic.
+- **Durability:** on-disk file (`*.db`), survives restarts. (The file itself is git-ignored.)
+
+---
+
+## 🔌 The wire-crossing guarantee (multi-user safety)
+
+Go's `net/http` runs **each request in its own goroutine** with its **own `*http.Request` and
+`r.Context()`**. So there's no shared per-request slot to collide in — *unless we create one*.
+
+**The rule:** the only things shared across requests are the **`*sql.DB` pool** and **config**.
+Everything request-specific (the authenticated account, role, deadline) lives in `r.Context()`.
+
+Follow that and cross-wiring is structurally impossible. We still prove it (trust, but verify):
+`go test -race` + parallel-submission tests where N users hit their own accounts and we assert
+nobody sees anyone else's data. See `docs/ACCEPTANCE.md`.
+
+---
+
+## 🔐 Auth in one breath
+
+JWT, **HS256**, signed with a server secret. Token carries `sub` (account_id) + `role`
+(`member`/`admin`). Middleware verifies with `golang-jwt` **pinning the method**
+(`WithValidMethods(["HS256"])`) to dodge the `alg:none` / algorithm-confusion attacks, then drops
+the identity into the request context. Handlers read identity from context — never from the URL.
+
+---
+
+## 🔄 Swap-ability (the "Postgres later" promise)
+
+Because `domain` talks to `store` through interfaces and `store` is the only place that knows SQL
+dialects, moving to Postgres is: new migrations, point sqlc at the `postgres` engine, swap the
+driver in `sqlite.go`. The handlers and rules don't change. That's the whole reason for the layering.
