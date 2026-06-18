@@ -1,0 +1,60 @@
+#!/bin/sh
+# .githooks/pre-push — keep SOLUTION.md in step with the code.
+#
+# Blocks a push when the pushed commits change the API spec (api/openapi.yaml) or
+# production Go (internal/**, cmd/** — excluding *_test.go and generated gen/) but
+# do NOT also change SOLUTION.md, the graded design doc. See CLAUDE.md.
+#
+# Bypass one push (use sparingly, e.g. a pure refactor):
+#   git push --no-verify        OR        SKIP_SOLUTION_CHECK=1 git push
+#
+# Fails OPEN: if it can't work out the commit range, it lets the push through.
+
+[ "${SKIP_SOLUTION_CHECK:-0}" = "1" ] && exit 0
+
+zero=0000000000000000000000000000000000000000
+status=0
+
+# git feeds one line per ref on stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# Branch deletion — nothing to inspect.
+	[ "$local_sha" = "$zero" ] && continue
+
+	if [ "$remote_sha" != "$zero" ]; then
+		base="$remote_sha"
+	else
+		# New branch: what does it add over the integration branch?
+		base=$(git merge-base origin/main "$local_sha" 2>/dev/null)
+	fi
+	# Can't establish a base → don't block.
+	[ -z "$base" ] && continue
+
+	changed=$(git diff --name-only "$base" "$local_sha" 2>/dev/null) || continue
+	[ -z "$changed" ] && continue
+
+	code=$(printf '%s\n' "$changed" \
+		| grep -E '^(api/openapi\.yaml|(internal|cmd)/.*\.go)$' \
+		| grep -vE '(_test\.go$|/gen/)' || true)
+	sol=$(printf '%s\n' "$changed" | grep -E '^SOLUTION\.md$' || true)
+
+	if [ -n "$code" ] && [ -z "$sol" ]; then
+		status=1
+		echo "" >&2
+		echo "✋ pre-push blocked on '$local_ref': production code changed but SOLUTION.md did not." >&2
+		printf '%s\n' "$code" | sed 's/^/     · /' >&2
+	fi
+done
+
+if [ "$status" -ne 0 ]; then
+	cat >&2 <<'MSG'
+
+  SOLUTION.md is a graded deliverable — it must track what actually shipped
+  (built-vs-planned table, endpoints, correctness, invariant status, footer).
+  Update it (the doc-updater subagent can), commit, then push again.
+
+  One-off bypass:  git push --no-verify    or    SKIP_SOLUTION_CHECK=1 git push
+MSG
+	exit 1
+fi
+
+exit 0

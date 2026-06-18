@@ -118,6 +118,10 @@ isn't "done" until they're current.
 Schemathesis ✓ · `docs/ACCEPTANCE.md` invariants for the slice ✓ · `docs/PROMPT_LOG.md` updated ✓ ·
 `README.md` progression updated ✓ · `SOLUTION.md` synced to what shipped ✓.
 
+> 🪝 **Enforced, not just asked:** a `pre-push` hook (`.githooks/pre-push`) **blocks** any push that
+> changes the API spec or production Go without touching `SOLUTION.md`. Enable once per clone:
+> `git config core.hooksPath .githooks` (one-off bypass: `git push --no-verify`). See `.githooks/README.md`.
+
 ---
 
 ## 🪟 Running the gates on Windows (standing reference — don't rediscover this)

@@ -731,4 +731,70 @@ the walking skeleton, via `/design-slice`).
 - 🔗 **Artifacts:** SOLUTION.md · CLAUDE.md · .claude/agents/doc-updater.md ·
   .claude/commands/build-slice.md · .claude/skills/tdd-workflow/SKILL.md · .github/ISSUE_TEMPLATE/slice.yml.
 
+### ⏱️ 2026-06-19 · Entry 26 — S6 (Login) slice **designed** (no code yet)
+
+- 🧑 **Asked:** Design slice **S6 — Login**, credential-based token issuance. Add
+  `POST /login {account_id, secret}` → **200** with a JWT (role pulled from the **stored** account) /
+  **401 `invalid_credentials`** — and the 401 must be **identical** for a wrong secret *and* an
+  unknown account (no user enumeration). Add bcrypt `password_hash` + `role` columns to `accounts`
+  via a timestamped goose migration; seed demo creds `member-123` / `demo-member-pw` and
+  `admin-001` / `demo-admin-pw`. Make `secret` **optional** on `POST /accounts` (role always
+  `member`; admin only via seed). Enforce **INV-14..17**.
+- 🔎 **The one real fork — what happens to the S3 credential-free `POST /token` mint?**
+  - ❌ **Rejected: gate `/token` behind a dev-only flag.** Even flagged, it would still let anyone
+    self-mint an **admin** token (no credential) whenever the flag is on in CI/dev — that's the exact
+    hole S6 exists to close.
+  - ✅ **Accepted (user's call): remove `/token` entirely**, every environment. Cleaner security
+    story, nothing to misconfigure.
+  - **Consequence:** the S3 acceptance `mintToken` helper is rewritten to sign tokens **in-process**
+    via the exported `httpapi.IssueToken(acceptanceSecret, ttl, wallet.Identity{...})` (no HTTP mint);
+    the two `/token`-specific tests get dropped/repurposed; and the **Schemathesis** recipe in
+    `CLAUDE.md` now mints its admin token via `POST /login` with the seeded `admin-001` creds. The
+    old `/token`→422 known-non-issue row is removed (the `/login` 401-on-random-creds case is already
+    covered by `--exclude-checks positive_data_acceptance`).
+- 🤖 **Did (design artifacts only — zero production code):**
+  - **OpenAPI:** add `/login` path + `LoginRequest` schema (no `role` field; `secret` `writeOnly`);
+    extend `NewAccount` with an optional `writeOnly` `secret`; **delete** the `/token` path +
+    `TokenRequest` schema; keep `TokenResponse` + `bearerAuth`.
+  - **Data:** new timestamped migration
+    `20260619090000_s6_account_credentials.sql` — `ALTER accounts ADD password_hash TEXT` (nullable)
+    + `role TEXT NOT NULL DEFAULT 'member' CHECK(member|admin)`; seed `member-123` + `admin-001` with
+    **pre-computed bcrypt (cost 12)** hashes. Mirror the columns into `queries/schema.sql`. New sqlc
+    `GetAccountCredential` query; `CreateAccount` query extended with `password_hash`.
+  - **Domain:** new sentinel `wallet.ErrInvalidCredentials` (one error for unknown-account /
+    NULL-hash / wrong-secret → no enumeration); `WalletService.Login` (bcrypt compare, **dummy
+    compare** on the not-found path to flatten timing); `CreateAccount` gains optional secret (bcrypt
+    cost 12, pure-Go, lives in the wallet core). Repo interface: `CreateAccount(+passwordHash)`,
+    `GetCredential`.
+  - **Transport:** new `httpapi/login.go` handler; `CreateAccount` reads the optional secret;
+    `publicPaths` swaps `/token` → `/login`; delete the `token.go` HTTP handler (keep the
+    package-level `IssueToken` signer).
+  - **Issue:** enriched GitHub **issue #10** with the full build-ready design.
+- ✅ **Invariants — already registered, no edits:** confirmed `docs/ACCEPTANCE.md` already carries
+  **INV-14..17** (status ⬜) with the matching test names. Did **not** duplicate them.
+- 💡 **Why:** credentials move auth from "trust the request" to "trust the store." Identical 401s +
+  a dummy bcrypt compare on the miss path kill **both** enumeration vectors (response shape *and*
+  timing). Stored bcrypt-only + `writeOnly` secret means the plaintext never lands in the DB or any
+  response.
+- 🔗 **Artifacts:** issue **#10** ·
+  `internal/sqlitestore/migrations/20260619090000_s6_account_credentials.sql` (planned) · branch `main`.
+
+### ⏱️ 2026-06-19 · Entry 27 — pre-push hook enforces SOLUTION.md freshness
+
+- 🧑 **Asked:** Add the pre-push hook for true enforcement.
+- 🤖 **Did:** Added a version-controlled `.githooks/pre-push` (+ `.githooks/README.md` and a
+  `.gitattributes` forcing LF so the `#!/bin/sh` shebang survives a clone) that **blocks** any push
+  whose commits change `api/openapi.yaml` or production Go (`internal/**`, `cmd/**`, excluding
+  `*_test.go` + `gen/`) without also touching `SOLUTION.md`. Wired it on with
+  `git config core.hooksPath .githooks`; documented the per-clone one-liner in `CLAUDE.md` +
+  `.githooks/README.md`.
+- ✅ **Verified against real history:** the S5 range (`batch.go` + `openapi.yaml`, no SOLUTION) is
+  **blocked** (exit 1, names the files); a SOLUTION-only commit **passes** (exit 0).
+- 🔎 **Design choices:** fails **open** if it can't resolve the commit range (a hook bug never wedges
+  a push); excludes tests + generated code (they don't change the design narrative); bypass via
+  `git push --no-verify` / `SKIP_SOLUTION_CHECK=1` for the rare pure refactor.
+- 💡 **Why:** the gate *reminds*, the hook *enforces* — SOLUTION can no longer silently drift behind
+  shipped code.
+- 🔗 **Artifacts:** .githooks/pre-push · .githooks/README.md · .gitattributes · CLAUDE.md.
+
 <!-- New entries go below this line -->
