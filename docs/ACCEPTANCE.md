@@ -18,8 +18,8 @@ final testing = every row here is green at once.
 |----|-----------|------------------|-------|:------:|
 | INV-1 | The same `ref`, submitted again, is **counted once** (idempotent) | `TestEarn_DuplicateRef_CountedOnce` | S1 | ✅ |
 | INV-2 | The same `ref` submitted **concurrently** still counts once | `TestEarn_ConcurrentSameRef_Once` (`-race`) | S1 | ✅ |
-| INV-3 | A spend that would make balance **negative is rejected** (409) | `TestSpend_BelowZero_Rejected` | S2 | ⬜ |
-| INV-4 | **Concurrent spends** on one account never over-draw; final balance exact | `TestSpend_ConcurrentNoOverdraw` (`-race`) | S2 | ⬜ |
+| INV-3 | A spend that would make balance **negative is rejected** (409) | `TestSpend_BelowZero_Rejected` | S2 | ✅ |
+| INV-4 | **Concurrent spends** on one account never over-draw; final balance exact | `TestSpend_ConcurrentNoOverdraw` (`-race`) | S2 | ✅ |
 | INV-5 | Balance = sum(earns) − sum(spends), **durable across restart** | `TestBalance_PersistsAcrossRestart` | S1 | ✅ |
 | INV-6 | **No wire-crossing:** N users hitting their own accounts only ever see their own data | `TestIsolation_NoCrossUserLeak` (`-race`) | S1 | ✅ |
 | INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S3 | ✅ |

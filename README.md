@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S3%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S2%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -44,8 +44,15 @@
     S1 handlers rewired to read identity from the **verified token only**. **INV-7/8/12/13 proven**;
     full quality gate green (gofmt · vet · lint · build · `-race` · Schemathesis **1174 / 0 failures** ·
     boot fail-fast on missing secret). On branch `slice/s3-auth` (ready for PR).
-  - ➡️ **Next:** 🅰️ **S2 — Spend + no-negative guard** (extends the earn tx with a balance check;
-    INV-3/4) · in parallel 🅲 **S4 — Audit** (INV-11) · then 🅱️ **S5 — CSV batch ingest** (INV-9/10).
+  - ✅ **[S2 / #3](https://github.com/ossewawiel/gowallet/issues/3)** — spend + no-negative guard
+    **built & green**: `POST /transactions` now takes `kind:"spend"`, enforcing the no-negative
+    invariant **atomically** (insert-then-check-and-rollback inside one `sql.Tx`) with idempotent
+    replay on duplicate `ref`. **INV-3 proven** (below-zero spend rejected → **409**) and **INV-4
+    proven** (16 concurrent spends never overdraw, under `-race`). 🎉 **The earn + spend core spine
+    is now complete.** On branch `slice/s2-spend` — merging to `main` via
+    [PR #11](https://github.com/ossewawiel/gowallet/pull/11) (Closes #3).
+  - ➡️ **Next:** the core spine (🅰️ S1 earn + S2 spend · 🅱️ S3 auth) is **done**. Remaining: 🅲 **S4 —
+    Audit trail** (INV-11), then 🅲 **S5 — CSV batch ingest** (INV-9/10, needs **S2 + S4**).
   - 🔑 **Backlog +1:** 🅱️ **S6 — Login** (credential-based token issuance,
     [#10](https://github.com/ossewawiel/gowallet/issues/10)) — a real `POST /login` replacing the S3
     demo mint; seeds demo creds (see **🔑 Test credentials** below).

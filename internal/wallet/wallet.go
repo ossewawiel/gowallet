@@ -19,6 +19,9 @@ var (
 	// created=false + the stored txn, so a replay never surfaces as a client
 	// error (the handler returns 200). Kept for clarity at the store seam.
 	ErrDuplicateRef = errors.New("duplicate ref")
+	// ErrInsufficientBalance — a spend would drive the balance below zero. The
+	// store's atomic guard returns this; the api layer maps it to 409.
+	ErrInsufficientBalance = errors.New("insufficient balance")
 )
 
 // Kind is the direction of a transaction. Points are always positive integers;
@@ -105,5 +108,18 @@ func (s *WalletService) RecordEarn(ctx context.Context, in Transaction) (Transac
 		return Transaction{}, false, ErrInvalidInput
 	}
 	in.Kind = KindEarn
+	return s.txns.RecordTransaction(ctx, in)
+}
+
+// RecordSpend records a spend transaction. It forces Kind=spend and delegates to
+// the repository's atomic insert-then-check-and-rollback path, which returns
+// ErrInsufficientBalance if the spend would drive the balance below zero. The
+// service is a thin pass-through: the no-negative guard lives in ONE tx in the
+// store (no read-then-write gap), so concurrent spends can't both pass a stale read.
+func (s *WalletService) RecordSpend(ctx context.Context, in Transaction) (Transaction, bool, error) {
+	if in.Ref == "" || in.AccountID == "" || in.Points <= 0 {
+		return Transaction{}, false, ErrInvalidInput
+	}
+	in.Kind = KindSpend
 	return s.txns.RecordTransaction(ctx, in)
 }

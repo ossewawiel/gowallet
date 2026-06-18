@@ -15,6 +15,10 @@ import (
 type fakeRepo struct {
 	accounts map[string]wallet.Account
 	byRef    map[string]wallet.Transaction
+	// recordErr, when non-nil, is returned by RecordTransaction for a fresh ref.
+	// Lets a unit test drive the store-level error path (e.g. insufficient
+	// balance) without a real DB — the service must pass it through untouched.
+	recordErr error
 }
 
 func newFakeRepo() *fakeRepo {
@@ -69,6 +73,9 @@ func (f *fakeRepo) RecordTransaction(_ context.Context, t wallet.Transaction) (w
 	if existing, ok := f.byRef[t.Ref]; ok {
 		return existing, false, nil
 	}
+	if f.recordErr != nil {
+		return wallet.Transaction{}, false, f.recordErr
+	}
 	f.byRef[t.Ref] = t
 	return t, true, nil
 }
@@ -93,6 +100,59 @@ func earn(ref, id string, pts int64) wallet.Transaction {
 		Kind:       wallet.KindEarn,
 		Points:     pts,
 		OccurredAt: time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC),
+	}
+}
+
+func spend(ref, id string, pts int64) wallet.Transaction {
+	return wallet.Transaction{
+		Ref:        ref,
+		AccountID:  id,
+		Kind:       wallet.KindSpend,
+		Points:     pts,
+		OccurredAt: time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC),
+	}
+}
+
+// RecordSpend must force Kind=spend regardless of what the caller passed in —
+// the service owns the direction, not the request body.
+func TestRecordSpend_ForcesKindSpend(t *testing.T) {
+	svc, _ := newService(t)
+	mustAccount(t, svc, "member-1")
+
+	in := wallet.Transaction{Ref: "tx-s", AccountID: "member-1", Kind: wallet.KindEarn, Points: 10,
+		OccurredAt: time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)}
+	got, _, err := svc.RecordSpend(context.Background(), in)
+	if err != nil {
+		t.Fatalf("RecordSpend: %v", err)
+	}
+	if got.Kind != wallet.KindSpend {
+		t.Fatalf("kind: want spend, got %q", got.Kind)
+	}
+}
+
+func TestRecordSpend_RejectsNonPositivePoints(t *testing.T) {
+	svc, _ := newService(t)
+	mustAccount(t, svc, "member-1")
+
+	_, _, err := svc.RecordSpend(context.Background(), spend("tx-s", "member-1", 0))
+	if !errors.Is(err, wallet.ErrInvalidInput) {
+		t.Fatalf("err: want ErrInvalidInput, got %v", err)
+	}
+}
+
+// The service is a thin pass-through for the store's insufficient-balance verdict:
+// the guard lives in the store (one tx), the service must not swallow or remap it.
+func TestRecordSpend_PropagatesInsufficientBalance(t *testing.T) {
+	repo := newFakeRepo()
+	repo.recordErr = wallet.ErrInsufficientBalance
+	svc := wallet.NewWalletService(repo, repo)
+	if err := svc.CreateAccount(context.Background(), wallet.Account{ID: "member-1", Name: "T"}); err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+
+	_, _, err := svc.RecordSpend(context.Background(), spend("tx-s", "member-1", 150))
+	if !errors.Is(err, wallet.ErrInsufficientBalance) {
+		t.Fatalf("err: want ErrInsufficientBalance (passed through), got %v", err)
 	}
 }
 
