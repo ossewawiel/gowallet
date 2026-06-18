@@ -1,0 +1,12 @@
+# oapi-codegen config — strict-server, generates the server interface + types
+# from api/openapi.yaml into package gen.
+package: gen
+output: internal/httpapi/gen/types_server.gen.go
+generate:
+  strict-server: true
+  std-http-server: false
+  chi-server: true
+  models: true
+  embedded-spec: false
+output-options:
+  skip-prune: true
