@@ -324,4 +324,52 @@ the walking skeleton, via `/design-slice`).
 - 🔗 **Artifacts:** GitHub issue #4 (enriched) — https://github.com/ossewawiel/gowallet/issues/4 ·
   `docs/ACCEPTANCE.md` · branch `slice/s0-skeleton` · no code commits (design-only).
 
+### ⏱️ 2026-06-18 · Entry 14 — S1 built (Accounts + Earn + Balance, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 2` — build **S1** end-to-end with strict spec-first TDD via the
+  `tdd-runner` subagent.
+- 🔎 **Explored / decisions in-build:**
+  - **Branch base correction:** local `main` was **2 commits stale** — S0 was in fact already merged
+    to `origin/main` via **PR #7**. Branched `slice/s1-accounts-earn` off the up-to-date main (no
+    re-merge needed) rather than off the stale local tip.
+  - **Wired the `kin-openapi` request validator** (`internal/httpapi/validate.go`) — S0 hadn't needed
+    it (only `/healthz`). **Scoped to spec routes**, infra routes untouched. Without it, Schemathesis
+    caught `additionalProperties` **bypasses** slipping through.
+  - **Spec tightened (spec-first, no behavior hacks)** to pass Schemathesis stateful:
+    - documented **400** on the GET-by-id routes + a shared-envelope `ErrorHandlerFunc` for malformed
+      path escapes;
+    - `account_id` constrained to `^[A-Za-z0-9._-]+$`, `maxLength 64`, so ids round-trip cleanly as
+      **path segments**;
+    - `points` given `maximum` = int64-max so an over-`int64` value is **rejected at the edge**.
+  - **Fixed a latent S0 spec bug:** `Error.message` description had an **unquoted comma** → YAML parsed
+    a stray sibling key that `kin-openapi` rejected; now quoted (prose-only, **no codegen impact**).
+  - **Atomicity landed as designed:** `sqlitestore.Store.RecordTransaction` does account-lookup +
+    `INSERT ... ON CONFLICT(ref) DO NOTHING` + read-back in **one `sql.Tx`**; `RowsAffected`
+    `1 ⇒ created (201)`, `0 ⇒ replay (200)`. Single writer serialises the race. **This is the seam S2
+    extends.**
+  - **Identity seam:** `subjectAccountID(r, candidate)` in `internal/httpapi/identity.go` — S1 returns
+    the body/path candidate; **S3 swaps to `r.Context()`**. Handlers only ever call it.
+  - **Balance is derived** (`SUM` over rows), not stored → **INV-5 durability is automatic**.
+- 🤖 **Did:** spec-first **RED** (4 paths + 5 schemas + links in `api/openapi.yaml`, regen via
+  `oapi-codegen`; failing unit/store/acceptance tests) → **GREEN** (migration
+  `20260618120000_s1_accounts_and_transactions.sql`, `sqlc` queries + gen, `wallet` domain,
+  `sqlitestore` impl, `httpapi` handlers, `main.go` wiring) → **REFACTOR** → **PROVE**. Installed
+  **`sqlc` v1.31.1** (`go install`); used **MinGW gcc** for cgo/`-race` (system clang targets the MSVC
+  ABI); Schemathesis needed `PYTHONUTF8=1` on Windows.
+- ✅ **Accepted:** all of it — quality gate **green**, **INV-1/2/5/6 proven under `-race`**.
+- 🧪 **Tests added:**
+  - **unit** — `TestRecordEarn_NewRef_Created`, `TestRecordEarn_DuplicateRef_ReturnsExistingNotCounted`,
+    `TestRecordEarn_UnknownAccount_NotFound`, `TestCreateAccount_DuplicateID_Conflict`,
+    `TestGetAccount_Missing_NotFound`, `TestBalance_SumsEarns`;
+  - **store** — `TestStore_InsertDuplicateRef_SecondIsNoOp`, `TestStore_Balance_DerivedFromRows`;
+  - **acceptance** — `TestEarn_DuplicateRef_CountedOnce`, `TestEarn_ConcurrentSameRef_Once` (`-race`),
+    `TestBalance_PersistsAcrossRestart`, `TestIsolation_NoCrossUserLeak` (`-race`).
+- 💡 **Why:** correctness via **SQL constraints + single-writer**; concurrency proven **in-slice**;
+  the spec stays the contract.
+- 📚 GitHub issue #2 (design) · `docs/specifications.pdf` · `docs/ARCHITECTURE.md` ·
+  `docs/REST_API_GUIDELINES.md` · `tdd-workflow` skill.
+- 🔗 **Artifacts:** branch `slice/s1-accounts-earn` · commit `b6dd443` (`feat(s1): accounts + earn +
+  balance`) · migration
+  `internal/sqlitestore/migrations/20260618120000_s1_accounts_and_transactions.sql` · issue #2.
+
 <!-- New entries go below this line -->
