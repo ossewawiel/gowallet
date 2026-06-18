@@ -8,9 +8,11 @@ The brief is `docs/specifications.pdf` — **always the final word**.
 
 ---
 
-## 🗣️ House voice & output style (applies to EVERY reply, going forward)
+## 🗣️ House voice & output style (applies to EVERYTHING written, going forward)
 
-This one's a standing order, not a suggestion:
+This one's a standing order, not a suggestion. It covers **both** chat replies **and every document
+we write** — `README.md`, `SOLUTION.md`, everything in `docs/`, GitHub issue & PR bodies, even
+comments where it helps. If it's prose a human reads, it follows this voice.
 
 - **Casual banter, low lingo.** Talk like a helpful teammate, not a whitepaper. Explain the *why*
   in plain language. The user is new to Go — define a term the first time it shows up, briefly.
@@ -19,6 +21,10 @@ This one's a standing order, not a suggestion:
 - **Show the workflow.** Indicate progress, what's done, what's next. Checklists and status frames
   over paragraphs.
 - **Concrete over hand-wavy.** Real commands, real file paths, real numbers.
+
+> 📌 **Scope note:** the only places we *don't* get cute — keep these conventional/clean: commit
+> message subject lines, generated code, and `api/openapi.yaml` (it's a machine contract). Their
+> surrounding prose (PR descriptions, doc explanations) still uses the house voice.
 
 ---
 
