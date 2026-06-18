@@ -251,4 +251,77 @@ the walking skeleton, via `/design-slice`).
   `internal/wallet/health.go`, `internal/sqlitestore/*` (+migration), `cmd/gowallet/main.go`,
   tests in `internal/*/*_test.go` + `test/acceptance/healthz_test.go`. Closes #1 once the PR merges.
 
+### ⏱️ 2026-06-18 · Entry 12 — S1 designed (Accounts + Earn + Balance, design-only)
+
+- 🧑 **Asked:** Run `/design-slice` for **S1** — Accounts + Earn + Balance. Design-only; enrich the
+  existing GitHub issue **#2**, no production code.
+- 🔎 **Explored / decisions weighed (and roads not taken):**
+  - **`account_id` is client-supplied** (brief's example `"member-123"`), not server-generated → a
+    duplicate create is a **409 `account_exists`**. (Not auto-incrementing IDs the server hands back.)
+  - **Idempotent replay** of a known `ref` returns **200** with the *stored* txn (first-write-wins) —
+    **not 201, not 409**. Replay with a *different* payload still returns the stored txn; `ref` is the
+    idempotency key. ❌ Rejected: 409-on-replay; ❌ rejected: comparing payloads to detect conflicts.
+  - **`kind` enum is `[earn]`-only** in the S1 spec, so `kin-openapi` bounces a `spend` at the edge
+    (**400**). The DB `CHECK` already allows `('earn','spend')` → S2 widens the enum with **no
+    migration churn**.
+  - **Balance is DERIVED** — `SUM` over rows, not a stored running-balance column → no dual-write, and
+    INV-5 durability falls out for free. Query written with the full `Σ(earn) − Σ(spend)` formula now,
+    so S2 needs **zero balance-code change**. ❌ Rejected: a stored balance column.
+  - **Atomicity:** `RecordTransaction` does account-lookup + `INSERT ... ON CONFLICT(ref) DO NOTHING`
+    in **one `sql.Tx`**; `RowsAffected` `1 ⇒ created (201)`, `0 ⇒ replay (200)`. Single writer
+    (`SetMaxOpenConns(1)`) serialises racing inserts → **INV-2**. This same tx is the seam S2 extends
+    with the balance / no-negative check.
+  - **Identity seam:** handlers read identity **only** via a `subjectAccountID(r)` resolver — S1 reads
+    body/path, S3 swaps it to `r.Context()` + adds the 403 check. A **swap, not a rewrite** — makes
+    INV-6 meaningful right now.
+  - **Txn against an unknown account** → **404 `account_not_found`** (the FK backstops it).
+- 🤖 **Did:** Read the brief PDF + `ARCHITECTURE`/`REST`/`ACCEPTANCE`/`SLICES` docs and the S0 code.
+  Designed the REST cycle (`POST /accounts`, `GET /accounts/{id}`, `POST /transactions` (earn),
+  `GET /accounts/{id}/balance`), the OpenAPI fragment (4 paths + `NewAccount`/`Account`/
+  `NewTransaction`/`Transaction`/`Balance` schemas + stateful links), the goose migration
+  `20260618120000_s1_accounts_and_transactions.sql` (accounts + transactions, `UNIQUE(ref)`,
+  `points > 0` CHECK, `kind` CHECK), domain interfaces + sentinels, and the full red-test list.
+  **Enriched GitHub issue #2** with the complete design (zero further design questions).
+- ✅ **Accepted:** the full S1 design above, landed on issue #2. Invariants **INV-1/2/5/6** left
+  unchanged in `ACCEPTANCE.md` — already registered for S1, status ⬜ (tests not written yet).
+- 💡 **Why:** spec-first vertical slice; correctness comes from **SQL constraints + a single writer**,
+  not app-level locking; concurrency tests ship *with* the slice, not bolted on later.
+- 📚 `docs/specifications.pdf` (brief — final word) · `docs/ARCHITECTURE.md` ·
+  `docs/REST_API_GUIDELINES.md` · `docs/ACCEPTANCE.md` · `docs/SLICES.md`.
+- 🔗 **Artifacts:** GitHub issue #2 (enriched) — https://github.com/ossewawiel/gowallet/issues/2 ·
+  planned migration `internal/sqlitestore/migrations/20260618120000_s1_accounts_and_transactions.sql` ·
+  no code commits (design-only).
+
+### ⏱️ 2026-06-18 · Entry 13 — S3 designed (Auth: JWT member/admin, design-only)
+
+- 🧑 **Asked:** Run `/design-slice` for **S3** — Auth (JWT, member/admin). Design-only; enrich the
+  existing GitHub issue **#4**, no production code.
+- 🔎 **Explored / decisions weighed (and roads not taken):**
+  - **Stateless JWT HS256 → no DB, no migration** for this slice. Auth is pure verification + a pure
+    rule, so S3 carries **zero schema** and parallelizes straight off S0 (doesn't wait on S1's tables).
+    Brief explicitly leaves the token scheme to us.
+  - **`POST /token` is a demo token mint**, not a credential login — `{account_id, role}` → signed
+    JWT. No password store is in scope (documented as a trade-off). `/token` is **DB-free** (no
+    account-existence check), which keeps S3 independent of **S1**.
+  - **Layer split stays at 3 packages:** verification (parse Bearer, pin HS256, extract claims) lives
+    as `httpapi` **middleware**; the authorization rule (member-own vs admin-any) is a **pure function
+    in `wallet`** — `Authorize(Identity, target) → ErrForbidden`. `Identity`/`Role` types live in
+    `wallet`, so the domain owns the rule and the edge owns the crypto.
+  - **Spec strategy:** a **global `security: [bearerAuth]`** default + per-op `security: []` opt-outs
+    for `/token` and `/healthz`. Net effect: the moment S1/S2 endpoints enter the spec they're
+    **protected by default** — no per-endpoint wiring to forget. New sentinel `ErrForbidden` → 403.
+  - **Algorithm pinned** via `jwt.WithValidMethods(["HS256"])` → kills `alg:none` + RS↔HS confusion
+    (INV-12).
+  - **New config:** `GOWALLET_JWT_SECRET` (required, **fail-fast at boot**) + `GOWALLET_JWT_TTL`
+    (default `1h`).
+- 🤖 **Did:** Enriched **GitHub issue #4** with the full build spec — OpenAPI fragment, the "no
+  migration" note, domain rules, the red-test list, and acceptance criteria. Added invariants
+  **INV-12** (alg pinning) + **INV-13** (identity-from-token-only) to `docs/ACCEPTANCE.md`.
+- ✅ **Accepted:** the full S3 design above. Invariants: **INV-7/INV-8** (pre-existing for S3) +
+  **INV-12/INV-13** newly registered, all status ⬜.
+- 💡 **Why:** stateless HS256 means a single service that signs *and* verifies — no key split, no DB,
+  no migration; identity from the verified token only is what makes member-own enforcement real.
+- 🔗 **Artifacts:** GitHub issue #4 (enriched) — https://github.com/ossewawiel/gowallet/issues/4 ·
+  `docs/ACCEPTANCE.md` · branch `slice/s0-skeleton` · no code commits (design-only).
+
 <!-- New entries go below this line -->
