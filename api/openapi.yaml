@@ -155,6 +155,36 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /batch:
+    post:
+      operationId: ingestBatch
+      summary: Ingest a CSV of transactions (admin only); idempotent on ref, returns a summary
+      tags: [batch]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: >
+                    CSV with header `ref,account_id,kind,points,occurred_at`.
+                    Example row: tx-001,member-123,earn,150,2024-06-01T10:00:00Z
+      responses:
+        '200':
+          description: Batch processed. Returns the summary counts (rejections are data, not errors).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchSummary' }
+        '400': { description: "Malformed upload — missing file part, or unreadable/absent CSV header.", content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /audit:
     get:
       operationId: listAudit
@@ -286,6 +316,16 @@ components:
     AuditLog:
       type: array
       items: { $ref: '#/components/schemas/AuditEntry' }
+    BatchSummary:
+      description: Result of a batch ingest — total rows seen and how each resolved.
+      type: object
+      additionalProperties: false
+      required: [processed, accepted, rejected, duplicates]
+      properties:
+        processed:  { type: integer, format: int64, description: "total data rows seen (= accepted + rejected + duplicates)", example: 4 }
+        accepted:   { type: integer, format: int64, description: "rows newly applied (created)", example: 2 }
+        rejected:   { type: integer, format: int64, description: "rows refused (bad row / unknown account / would go negative)", example: 1 }
+        duplicates: { type: integer, format: int64, description: "rows whose ref was already seen (idempotent replay)", example: 1 }
     Error:
       description: Single error envelope used across the whole API (RFC 9457-ish, trimmed).
       type: object
