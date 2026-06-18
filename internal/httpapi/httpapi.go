@@ -7,6 +7,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,12 +16,26 @@ import (
 	"github.com/ossewawiel/gowallet/internal/wallet"
 )
 
-// Deps are the collaborators the router needs. Only the shared health service
-// and the spec bytes — nothing request-specific (that rides in r.Context()).
+// Deps are the collaborators the router needs. Only shared, process-wide things:
+// the services, the spec bytes, and the JWT signing config. Nothing
+// request-specific (that rides in r.Context()).
 type Deps struct {
-	Health   *wallet.HealthService
-	Wallet   *wallet.WalletService
-	SpecYAML []byte
+	Health    *wallet.HealthService
+	Wallet    *wallet.WalletService
+	SpecYAML  []byte
+	JWTSecret string
+	JWTTTL    time.Duration
+}
+
+// publicPaths are the only routes reachable without a Bearer token. Everything
+// else is protected by default (mirrors the spec's global `security` + the
+// per-operation `security: []` opt-outs). Infra routes (/openapi.yaml,
+// /swagger) aren't in the spec's paths, so they're enforced here too.
+var publicPaths = map[string]bool{
+	"/healthz":      true,
+	"/token":        true,
+	"/openapi.yaml": true,
+	"/swagger":      true,
 }
 
 // NewRouter builds the fully-wired HTTP handler: middleware, the generated
@@ -46,8 +61,32 @@ func NewRouter(deps Deps) http.Handler {
 	// (bodies/params/additionalProperties/enums validated at the edge) so the
 	// infra routes below stay untouched. If the spec fails to load we panic at
 	// startup — a broken contract must never boot.
-	srv := &server{health: deps.Health, wallet: deps.Wallet}
+	srv := &server{
+		health:    deps.Health,
+		wallet:    deps.Wallet,
+		jwtSecret: deps.JWTSecret,
+		jwtTTL:    deps.JWTTTL,
+	}
 	var mws []gen.MiddlewareFunc
+
+	// Auth runs first: it verifies the Bearer token and drops the identity into
+	// the context for every spec route EXCEPT the public opt-outs. We gate on
+	// the request path so /token + /healthz stay open while everything else is
+	// protected by default — the same shape as the spec's global `security`.
+	if deps.JWTSecret != "" {
+		auth := Authenticator(deps.JWTSecret)
+		mws = append(mws, func(next http.Handler) http.Handler {
+			protected := auth(next)
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if publicPaths[r.URL.Path] {
+					next.ServeHTTP(w, r)
+					return
+				}
+				protected.ServeHTTP(w, r)
+			})
+		})
+	}
+
 	if len(deps.SpecYAML) > 0 {
 		validate, err := newValidator(deps.SpecYAML)
 		if err != nil {

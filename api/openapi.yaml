@@ -5,12 +5,48 @@ info:
   description: Loyalty points wallet — accounts earn/spend points with correct balances.
 servers:
   - url: http://localhost:8080
+
+# Global default: every operation needs a Bearer JWT. Public routes opt out
+# per-operation with `security: []`. Spec-first, this means any new path is
+# protected by default — you have to *explicitly* open one up.
+security:
+  - bearerAuth: []
+
 paths:
+  /token:
+    post:
+      operationId: issueToken
+      summary: Issue a signed HS256 JWT for an account_id + role (demo token mint).
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenRequest' }
+      responses:
+        '200':
+          description: A signed Bearer token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400':
+          description: Malformed JSON body.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Well-formed but invalid (e.g. unknown role).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /healthz:
     get:
       operationId: getHealth
       summary: Liveness + database readiness probe
       tags: [meta]
+      security: []
       responses:
         '200':
           description: Service healthy and database reachable.
@@ -49,6 +85,7 @@ paths:
               operationId: getBalance
               parameters: { account_id: '$response.body#/account_id' }
         '400': { description: Malformed body., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: account_id already exists., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /accounts/{account_id}:
@@ -65,6 +102,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Account' }
         '400': { description: Malformed account_id in the path., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: No such account., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /accounts/{account_id}/balance:
@@ -81,6 +120,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Balance' }
         '400': { description: Malformed account_id in the path., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: No such account., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /transactions:
@@ -105,10 +146,52 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Transaction' }
         '400': { description: Malformed body or kind not allowed., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: account_id does not exist., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
+  responses:
+    # Shared auth responses, referenced by every protected operation so the
+    # contract documents what the Bearer requirement implies: no/bad token → 401,
+    # a member reaching for another account → 403.
+    Unauthorized:
+      description: Missing, malformed, or invalid Bearer token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated, but not allowed to act on this account.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        HS256-signed JWT. Carries `sub` (account_id) + `role` (member|admin). The server pins the
+        algorithm to HS256 on verify (kills alg:none / RS↔HS confusion).
   schemas:
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required: [account_id, role]
+      properties:
+        account_id: { type: string, minLength: 1, example: member-123 }
+        # role is validated semantically by the handler (unknown → 422), not as a
+        # schema enum — a well-formed-but-unknown role is "unprocessable", not a
+        # malformed body. Allowed values are member | admin.
+        role:       { type: string, minLength: 1, example: member }
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [token, token_type, expires_in]
+      properties:
+        token:      { type: string, description: the HS256 JWT }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, description: seconds until the token expires, example: 3600 }
     NewAccount:
       type: object
       additionalProperties: false

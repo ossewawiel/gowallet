@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ossewawiel/gowallet/internal/httpapi"
 	"github.com/ossewawiel/gowallet/internal/sqlitestore"
@@ -39,9 +40,11 @@ func bootAppAt(t *testing.T, dbPath string) (*httptest.Server, func()) {
 
 	svc := wallet.NewWalletService(store, store)
 	router := httpapi.NewRouter(httpapi.Deps{
-		Health:   wallet.NewHealthService(store),
-		Wallet:   svc,
-		SpecYAML: specYAML,
+		Health:    wallet.NewHealthService(store),
+		Wallet:    svc,
+		SpecYAML:  specYAML,
+		JWTSecret: acceptanceSecret,
+		JWTTTL:    time.Hour,
 	})
 	srv := httptest.NewServer(router)
 
@@ -65,9 +68,17 @@ func postJSON(t *testing.T, url string, body any) *http.Response {
 	return resp
 }
 
+// adminToken mints an admin JWT — admin may act on any account, so test setup
+// helpers (create account, read balance, seed earns) use it freely.
+func adminToken(t *testing.T, base string) string {
+	t.Helper()
+	return mintToken(t, base, "test-admin", "admin")
+}
+
 func createAccount(t *testing.T, base, id string) {
 	t.Helper()
-	resp := postJSON(t, base+"/accounts", map[string]any{"account_id": id, "name": "T-" + id})
+	resp := authPostJSON(t, base+"/accounts", adminToken(t, base),
+		map[string]any{"account_id": id, "name": "T-" + id})
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create account %s: want 201, got %d", id, resp.StatusCode)
@@ -86,30 +97,16 @@ func earnBody(ref, id string, pts int64) map[string]any {
 
 func getBalance(t *testing.T, base, id string) int64 {
 	t.Helper()
-	resp, err := http.Get(base + "/accounts/" + id + "/balance")
-	if err != nil {
-		t.Fatalf("GET balance %s: %v", id, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET balance %s: want 200, got %d", id, resp.StatusCode)
-	}
-	var got struct {
-		AccountID string `json:"account_id"`
-		Balance   int64  `json:"balance"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
-		t.Fatalf("decode balance: %v", err)
-	}
-	return got.Balance
+	return authBalance(t, base, id, adminToken(t, base))
 }
 
 // INV-1: same ref resubmitted is counted once; replay returns 200 + same body.
 func TestEarn_DuplicateRef_CountedOnce(t *testing.T) {
 	srv := bootRealApp(t)
 	createAccount(t, srv.URL, "member-1")
+	admin := adminToken(t, srv.URL)
 
-	first := postJSON(t, srv.URL+"/transactions", earnBody("tx-1", "member-1", 150))
+	first := authPostJSON(t, srv.URL+"/transactions", admin, earnBody("tx-1", "member-1", 150))
 	if first.StatusCode != http.StatusCreated {
 		t.Fatalf("first earn: want 201, got %d", first.StatusCode)
 	}
@@ -117,7 +114,7 @@ func TestEarn_DuplicateRef_CountedOnce(t *testing.T) {
 	_ = json.NewDecoder(first.Body).Decode(&firstBody)
 	_ = first.Body.Close()
 
-	second := postJSON(t, srv.URL+"/transactions", earnBody("tx-1", "member-1", 150))
+	second := authPostJSON(t, srv.URL+"/transactions", admin, earnBody("tx-1", "member-1", 150))
 	if second.StatusCode != http.StatusOK {
 		t.Fatalf("replay earn: want 200, got %d", second.StatusCode)
 	}
@@ -138,6 +135,7 @@ func TestEarn_DuplicateRef_CountedOnce(t *testing.T) {
 func TestEarn_ConcurrentSameRef_Once(t *testing.T) {
 	srv := bootRealApp(t)
 	createAccount(t, srv.URL, "member-1")
+	admin := adminToken(t, srv.URL)
 
 	const n = 16
 	var wg sync.WaitGroup
@@ -146,7 +144,7 @@ func TestEarn_ConcurrentSameRef_Once(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			resp := postJSON(t, srv.URL+"/transactions", earnBody("tx-race", "member-1", 100))
+			resp := authPostJSON(t, srv.URL+"/transactions", admin, earnBody("tx-race", "member-1", 100))
 			codes[i] = resp.StatusCode
 			_ = resp.Body.Close()
 		}(i)
@@ -177,7 +175,7 @@ func TestBalance_PersistsAcrossRestart(t *testing.T) {
 
 	srv1, stop1 := bootAppAt(t, dbPath)
 	createAccount(t, srv1.URL, "member-1")
-	resp := postJSON(t, srv1.URL+"/transactions", earnBody("tx-1", "member-1", 250))
+	resp := authPostJSON(t, srv1.URL+"/transactions", adminToken(t, srv1.URL), earnBody("tx-1", "member-1", 250))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("earn: want 201, got %d", resp.StatusCode)
 	}
@@ -197,6 +195,7 @@ func TestBalance_PersistsAcrossRestart(t *testing.T) {
 // INV-6 (-race): N members each earn to & read their OWN account; no cross-leak.
 func TestIsolation_NoCrossUserLeak(t *testing.T) {
 	srv := bootRealApp(t)
+	admin := adminToken(t, srv.URL)
 
 	const n = 12
 	for i := 0; i < n; i++ {
@@ -210,7 +209,7 @@ func TestIsolation_NoCrossUserLeak(t *testing.T) {
 			defer wg.Done()
 			id := fmt.Sprintf("member-%d", i)
 			pts := int64((i + 1) * 10)
-			resp := postJSON(t, srv.URL+"/transactions", earnBody(fmt.Sprintf("tx-%d", i), id, pts))
+			resp := authPostJSON(t, srv.URL+"/transactions", admin, earnBody(fmt.Sprintf("tx-%d", i), id, pts))
 			if resp.StatusCode != http.StatusCreated {
 				t.Errorf("earn for %s: want 201, got %d", id, resp.StatusCode)
 			}
