@@ -56,4 +56,24 @@ Answers to the interrogation, which set the project's direction:
   default — handling it now prevents "command not found" later.
   📚 [gopls](https://pkg.go.dev/golang.org/x/tools/gopls).
 
+### ⏱️ 2026-06-18 · Entry 04 — Plumbing complete ✅
+
+- 🤖 **Did:** Installed the toolchain via winget and verified everything end-to-end:
+
+  | Tool | Version | Notes |
+  |------|---------|-------|
+  | Go | `go1.26.4 windows/amd64` | latest stable |
+  | GitHub CLI | `gh 2.94.0` | was already installed → upgraded |
+  | gopls (Go LSP) | `v0.22.0` | on PATH at `C:\Users\User-PC\go\bin` |
+
+- ✅ **Accepted:** `gh` turned out to be **already authenticated** (account `ossewawiel`, SSH,
+  `repo` scope) — so no interactive login was needed.
+- 🤖 **Did:** Created the **public** repo and pushed the first commit:
+  **https://github.com/ossewawiel/gowallet** (remote `origin` over SSH; `main` tracks `origin/main`).
+- 💡 **Why this order:** install → refresh PATH in-session → verify each tool → only then create the
+  repo, so a broken tool surfaces immediately instead of mid-push.
+
+**Step 1 outcome:** environment ready, repo live, recording in place. ➡️ Next: **Step 2 — dev system**
+(project layout, TDD harness, OpenAPI/Swagger, Docker, CI).
+
 <!-- New entries go below this line -->
