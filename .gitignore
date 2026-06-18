@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────
+# gowallet · .gitignore
+# ─────────────────────────────────────────────────────────────
+
+# Compiled binaries / build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/gowallet
+/gowallet.exe
+
+# Go test & coverage artifacts
+*.test
+*.out
+coverage.*
+profile.*
+
+# SQLite runtime data — durable across restarts, but NOT source.
+# (Migrations and seed .sql files live in source and are NOT ignored.)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.idea/
+.DS_Store
+Thumbs.db
+
+# VS Code: ignore everything EXCEPT the shared, committed config
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Go workspace files (local only)
+go.work
+go.work.sum

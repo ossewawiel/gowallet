@@ -1,0 +1,7 @@
+{
+  // Recommended extensions for working on gowallet.
+  // VS Code will prompt to install these when the folder is opened.
+  "recommendations": [
+    "golang.go"
+  ]
+}

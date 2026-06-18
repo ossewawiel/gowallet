@@ -1,0 +1,29 @@
+{
+  // ── Go / gopls configuration ─────────────────────────────────
+  // The golang.go extension drives gopls (the Go language server).
+  "go.useLanguageServer": true,
+  "gopls": {
+    "ui.semanticTokens": true,
+    "ui.diagnostic.staticcheck": true
+  },
+
+  // Format + organise imports on save (gofmt/goimports via gopls).
+  "editor.formatOnSave": true,
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+
+  // Run `go vet` and tests with the race detector — wallet correctness matters.
+  "go.vetOnSave": "package",
+  "go.testFlags": ["-race", "-v"],
+
+  // Keep the SQLite database file out of the editor's noise.
+  "files.exclude": {
+    "**/*.db": true,
+    "**/*.db-shm": true,
+    "**/*.db-wal": true
+  }
+}
