@@ -26,7 +26,14 @@ You keep gowallet's paper trail honest and current. You write docs only — no c
      the last one. Still **curated, not a verbatim dump** — capture the signal and the *why*, lean toward more detail than less.
 2. **`docs/ACCEPTANCE.md`** — flip invariant rows between ⬜ planned / 🟡 red / ✅ proven, or add new
    `INV-n` rows for a new slice.
-3. **`SOLUTION.md`** — update the decisions table or AI-workflow summary when a real decision changes.
+3. **`SOLUTION.md`** — **sync it every time a slice lands**, not only when a decision changes (that
+   loophole is what let it drift). On a slice merge, update:
+   - the **built-vs-planned** table (flip the slice → ✅ built),
+   - the **API & data model** section (add its endpoints / schema changes),
+   - the **correctness / security** sections (any new mechanic it introduced),
+   - the **invariant-status** line (which `INV-n` are now proven),
+   - the **trade-offs** list, and the **"last synced"** footer.
+   Also refresh the decisions table / AI-workflow summary whenever a real decision changes.
 4. **`README.md`** — keep the **Progress** section current (what step/slice just landed, what's next).
    Update it on **every push** so the front door always shows the latest state.
 

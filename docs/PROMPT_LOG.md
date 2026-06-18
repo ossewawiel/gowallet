@@ -711,4 +711,24 @@ the walking skeleton, via `/design-slice`).
   `internal/httpapi/batch_test.go`, `test/acceptance/s5_batch_test.go`, `api/openapi.yaml`,
   `CLAUDE.md`.
 
+### ⏱️ 2026-06-19 · Entry 25 — SOLUTION.md re-synced + wired into the per-slice gate
+
+- 🧑 **Asked:** SOLUTION.md drifted again — the skills aren't keeping it updated.
+- 🔎 **Root cause:** README stayed current because it's in the quality gate **+** a CLAUDE standing
+  order **+** a doc-updater job. `SOLUTION.md` was only *"update when a decision changes"*, so build
+  sessions (correctly) skipped it on a normal slice. A wiring gap, not a skill failure.
+- 🤖 **Did (re-sync):** Confirmed from git that S4 (#14) + S5 (#15) are merged. Flipped SOLUTION's
+  built-vs-planned table (S4/S5 → ✅), added `POST /batch` + `GET /audit` to the API table, added the
+  batch-reprocess + append-only-audit correctness rows, updated the invariant-status line (INV-1–13 &
+  21–23 proven; only 14–20 left), and the footer.
+- 🤖 **Did (the real fix — make it self-maintaining):** added `SOLUTION.md synced` to the quality gate
+  in `CLAUDE.md` **and** the `tdd-workflow` skill; renamed the CLAUDE standing order to **"README +
+  SOLUTION kept current"**; made `/build-slice` dispatch `doc-updater` to sync SOLUTION on green;
+  strengthened the `doc-updater` SOLUTION job from "when a decision changes" → **"every time a slice
+  lands"** with a concrete checklist; added a SOLUTION/README checkbox to the slice issue template.
+- 💡 **Why:** the only reliable way to stop drift is to make SOLUTION part of the *definition of done*,
+  in the same places that already keep README current — not hope a session remembers.
+- 🔗 **Artifacts:** SOLUTION.md · CLAUDE.md · .claude/agents/doc-updater.md ·
+  .claude/commands/build-slice.md · .claude/skills/tdd-workflow/SKILL.md · .github/ISSUE_TEMPLATE/slice.yml.
+
 <!-- New entries go below this line -->

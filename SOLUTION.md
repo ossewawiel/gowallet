@@ -25,13 +25,14 @@ SQL-level guards that can't be torn apart by concurrency. It was built in delibe
 | **S1** | Accounts + earn + balance — `POST /accounts`, `GET /accounts/{id}`, `POST /transactions` (earn), `GET …/balance` | ✅ built |
 | **S2** | Spend + atomic no-negative guard | ✅ built |
 | **S3** | Auth — JWT HS256 verify middleware + member/admin access rule | ✅ built |
-| **S4** | Audit trail (+ admin `GET /audit`) | 📋 specced (issue #5) |
-| **S5** | CSV batch ingestion + summary | 📋 specced (issue #6) |
+| **S4** | Audit trail — append-only `audit_log` + admin `GET /audit` | ✅ built |
+| **S5** | CSV batch ingestion — admin `POST /batch` + summary | ✅ built |
 | **S6** | Login — credential-based token issuance | 📋 specced (issue #10) |
 | **S7** | Listings — `GET /accounts`, `GET /accounts/{id}/transactions` | 📋 specced (issue #13) |
 
-The earn + spend + auth **core is complete and green**; the remaining slices are fully designed in
-[`docs/slices/`](docs/slices/) with GitHub issues ready to build.
+All six **core feature slices (S0–S5) are built and merged** — accounts, earn, spend, auth, audit,
+and CSV batch ingestion. Only **S6 (login)** and **S7 (listings)** remain; both are fully designed
+in [`docs/slices/`](docs/slices/) with GitHub issues ready to build.
 
 ---
 
@@ -69,6 +70,8 @@ handler calling `wallet`. Three packages, full stop.
 | `GET /accounts/{id}` | read one account | Bearer (own/admin) |
 | `GET /accounts/{id}/balance` | current balance | Bearer (own/admin) |
 | `POST /transactions` | record earn **or** spend (idempotent on `ref`) | Bearer (own/admin) |
+| `POST /batch` | admin CSV upload → summary (processed / accepted / rejected / duplicates) | Bearer (admin) |
+| `GET /audit` | admin view of the append-only audit log (`?account_id=` filter) | Bearer (admin) |
 
 **Data model** (two tables; balances are *derived*, never stored):
 
@@ -119,10 +122,12 @@ The full reasoning + primary sources are in [`docs/PROMPT_LOG.md`](docs/PROMPT_L
 | **Safe under overlapping requests** | The write path pins **`SetMaxOpenConns(1)`** (single writer) + **WAL** + `busy_timeout=5000`, so racing spends each see every committed prior spend. Concurrency holds *by construction*, not by hope. |
 | **Durable across restarts** | On-disk SQLite, `journal_mode=WAL`, `synchronous=NORMAL`. Balance is a `SUM` over surviving rows. |
 | **No wire-crossing** | Only the `*sql.DB` pool + config are shared; identity rides in `r.Context()` from the **verified token only**. Proven by an N-user `-race` isolation test. |
+| **Batch safe on reprocess** | Each CSV row rides the *same* idempotent `RecordEarn`/`RecordSpend` (`UNIQUE(ref)`); reprocessing the same file double-counts nothing. Rejected rows are tallied as data, not errors. |
+| **Audit of every attempt** | An **append-only** `audit_log` (ref *not* unique, written in its own insert — never inside the money `sql.Tx`) records each attempt's outcome + reason; admin reads via `GET /audit`. |
 
 Every row above is backed by a test in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — the invariant
-registry. **INV-1–8, 12, 13 are proven (green under `-race`)**; INV-9–11, 14–22 are registered for
-the not-yet-built slices.
+registry. **INV-1–13 and 21–23 are proven (green under `-race`)** — accounts, earn, spend, auth,
+audit, and batch. Only **INV-14–20** remain (S6 login, S7 listings).
 
 ---
 
@@ -172,7 +177,8 @@ and updated docs).
   (a driver + migration change, not a rewrite — that's why the layering exists).
 - **`int64` balance overflow** is flagged as a known edge (noted during the S3 build) to be handled
   where it belongs.
-- **Audit (S4) + batch (S5)** are specced but not yet built.
+- **Only login (S6) + listings (S7)** remain unbuilt — the audit trail and CSV batch ingestion are
+  merged to `main`.
 
 ---
 
@@ -204,4 +210,6 @@ as a fully-specced issue, and a fresh session builds it red→green→refactor�
 
 ---
 
-_Living document — kept in step with the build (last synced after S2/S3 landed and S4–S7 were specced)._
+_Living document — synced to `main` every time a slice lands (see `.claude/agents/doc-updater.md` +
+the quality gate). Last synced after **S5 landed**: audit + batch are on `main`; **S6 login + S7
+listings** remain._

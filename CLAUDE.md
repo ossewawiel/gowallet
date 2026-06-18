@@ -82,11 +82,19 @@ finer grain**:
 
 ---
 
-## 📈 README tracks progression (standing order)
+## 📈 README + SOLUTION kept current (standing order)
 
 `README.md` is the **front door** — a reviewer should see current state at a glance without digging
 through the prompt log. Keep its **Progress** section accurate and **update it on every push** (what
-step/slice just landed, what's next). The **`doc-updater`** subagent owns this alongside the prompt log.
+step/slice just landed, what's next).
+
+`SOLUTION.md` is the **graded design doc** — it must match what's *actually shipped*. **Every time a
+slice lands, sync it**: the built-vs-planned table, the endpoints/data-model, any new
+correctness/security mechanic, the invariant-status line, and the "last synced" footer. A real
+decision change updates the decisions table too.
+
+Both docs are owned by the **`doc-updater`** subagent and are part of the **quality gate** — a slice
+isn't "done" until they're current.
 
 ---
 
@@ -108,7 +116,7 @@ step/slice just landed, what's next). The **`doc-updater`** subagent owns this a
 
 `gofmt` ✓ · `go vet` ✓ · `golangci-lint` ✓ · `go build ./...` ✓ · `go test -race ./...` ✓ ·
 Schemathesis ✓ · `docs/ACCEPTANCE.md` invariants for the slice ✓ · `docs/PROMPT_LOG.md` updated ✓ ·
-`README.md` progression updated ✓.
+`README.md` progression updated ✓ · `SOLUTION.md` synced to what shipped ✓.
 
 ---
 

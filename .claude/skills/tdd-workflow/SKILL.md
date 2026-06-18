@@ -17,7 +17,8 @@ Never write production code before a failing test. Hold this line.
 3. **GREEN** 🟢 — minimum code to pass (migration → sqlc query → domain rule → handler). No gold-plating.
 4. **REFACTOR** 🧹 — clean names/dedupe; tests stay green.
 5. **PROVE** 🧪 — the quality gate (below).
-6. **LOG + SHIP** 📦 — PROMPT_LOG entry (via `doc-updater`), flip ACCEPTANCE rows to ✅, push, PR closes issue.
+6. **LOG + SHIP** 📦 — via `doc-updater`: PROMPT_LOG entry, flip ACCEPTANCE rows to ✅, **sync
+   `SOLUTION.md`** to what shipped, update the README Progress section. Then push; the PR closes the issue.
 
 ## Two-layer testing source of truth
 - **Layer 1 — contract:** `api/openapi.yaml` fuzzed by **Schemathesis** (property + stateful). Catches
@@ -29,7 +30,8 @@ Never write production code before a failing test. Hold this line.
 
 ## Quality gate (definition of done — all green)
 `gofmt` ✓ · `go vet` ✓ · `golangci-lint` ✓ · `go build ./...` ✓ · `go test -race ./...` ✓ ·
-`schemathesis run` ✓ · the slice's `ACCEPTANCE.md` rows ✓ · `PROMPT_LOG.md` updated ✓.
+`schemathesis run` ✓ · the slice's `ACCEPTANCE.md` rows ✓ · `PROMPT_LOG.md` updated ✓ ·
+`SOLUTION.md` synced ✓ · `README.md` Progress updated ✓.
 
 ### Windows runbook (use the PowerShell tool — see CLAUDE.md "Running the gates on Windows")
 - **`-race` needs cgo + MinGW** (default env is `CGO_ENABLED=0`). Prefix every race run:

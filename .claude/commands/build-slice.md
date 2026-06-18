@@ -15,8 +15,10 @@ argument-hint: <github issue number, e.g. 7>
    🟢 green (min code) → 🧹 refactor → 🧪 prove (full quality gate + Schemathesis + `-race`).
 3. **On return:**
    - If 🔴 the runner hit a blocker — surface the exact failing check + output, propose the smallest fix.
-   - If ✅ green — dispatch the **`doc-updater`** subagent to append the `PROMPT_LOG.md` entry and
-     flip the slice's `ACCEPTANCE.md` rows to ✅.
+   - If ✅ green — dispatch the **`doc-updater`** subagent to: append the `PROMPT_LOG.md` entry, flip
+     the slice's `ACCEPTANCE.md` rows to ✅, **sync `SOLUTION.md`** (built-vs-planned table, new
+     endpoints, invariant-status line, footer), and update the `README.md` Progress section. All four
+     are part of the quality gate.
 4. **Offer the PR** — show the `gh pr create` command (PR body should `Closes #$ARGUMENTS`). Don't
    push or merge without my go-ahead.
 

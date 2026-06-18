@@ -126,4 +126,5 @@ body:
         - label: "Schemathesis run clean against the spec"
         - label: "docs/ACCEPTANCE.md rows flipped to ✅"
         - label: "docs/PROMPT_LOG.md entry added"
+        - label: "SOLUTION.md synced + README Progress updated"
         - label: "PR opened that Closes this issue"
