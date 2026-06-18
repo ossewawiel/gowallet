@@ -4,7 +4,11 @@ A running, plain-language log of how gowallet was built — the prompts asked, w
 what was accepted or edited, and **why**. Newest entries at the bottom. This is the "director's
 commentary" for [`SOLUTION.md`](../SOLUTION.md).
 
-**Legend:** 🧑 me · 🤖 assistant · ✅ accepted · ✏️ edited/steered · 💡 rationale · 📚 source
+**Legend:** 🧑 asked · 🔎 explored/options · 🤖 did · ✅ accepted · ✏️ edited/steered · ❌ rejected ·
+💡 why · 📚 source · 🔗 artifacts (commits/paths/issues)
+
+> 📏 **Granularity:** one entry per meaningful exchange or decision — finer is better. Don't fold
+> multiple decisions into a single line. Curated, not a transcript.
 
 ---
 
@@ -109,5 +113,31 @@ Answers to the interrogation, which set the project's direction:
 
 **Step 2 outcome:** the factory is built. ➡️ Next: **Step 3 — execution** (start at slice **S0**,
 the walking skeleton, via `/design-slice`).
+
+### ⏱️ 2026-06-18 · Entry 06 — Prompt-log rule: go granular
+
+- 🧑 **Asked:** Make prompt-log entries more granular; update the rules (not just this one entry).
+- 🔎 **Explored:** Where the rule lives — `CLAUDE.md` (standing order), `.claude/agents/doc-updater.md`
+  (the writer's spec), and this file's legend. Weighed rewriting past entries vs rules-only →
+  chose rules-only (can backfill on request).
+- ✅ **Accepted:** "One entry per exchange/decision" granularity + a richer entry skeleton.
+- ✏️ **Edited:** Added icons to the format — 🔎 explored, ❌ rejected, 🔗 artifacts.
+- 🤖 **Did:** Updated `CLAUDE.md`, `.claude/agents/doc-updater.md`, and this file's legend. This entry
+  is the first written in the new style.
+- 💡 **Why:** The brief grades the AI workflow — finer grain shows the real reasoning and the roads
+  not taken, not just milestones.
+- 🔗 **Artifacts:** CLAUDE.md · docs/PROMPT_LOG.md · .claude/agents/doc-updater.md
+
+### ⏱️ 2026-06-18 · Entry 07 — README tracks progression, updated every push
+
+- 🧑 **Asked:** README wasn't reflecting the latest progress; it should track progression and be
+  updated on every push.
+- 🤖 **Did:** Refreshed `README.md` (Step 1 ✅ + Step 2 ✅ + Step 3 next, new **Progress** section,
+  locked tech-stack table, updated layout). Added a standing order in `CLAUDE.md` + the quality gate,
+  and gave `doc-updater` ownership of README progression.
+- ✅ **Accepted:** "Update README every push" as a definition-of-done item.
+- 💡 **Why:** README is the front door — a reviewer should see current state at a glance without
+  digging through the prompt log.
+- 🔗 **Artifacts:** README.md · CLAUDE.md · .claude/agents/doc-updater.md
 
 <!-- New entries go below this line -->

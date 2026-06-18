@@ -5,53 +5,75 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%201%3A%20plumbing-yellow">
-  <img alt="go" src="https://img.shields.io/badge/Go-1.26.x-00ADD8">
-  <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20driver-003B57">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20build%20(next)-blue">
+  <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
+  <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
+  <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
 </p>
 
 ---
 
-## 🧭 Where this project is right now
+## 📈 Progress (kept current every push)
 
-This repo is built in deliberate stages so the history reads like a story, not a data-dump:
+| Step | What it delivers | State |
+|------|------------------|:-----:|
+| **1 · Plumbing** | Go 1.26.4 + gh + gopls, public repo live, prompt timeline started | ✅ done |
+| **2 · Dev system** | CLAUDE.md, engineering docs, skills, subagents, commands, issue templates | ✅ done |
+| **3 · Design & build** | The actual wallet — slices S0→S7, spec-first + TDD | ⏳ up next |
 
-| Stage | What it covers | State |
-|------:|----------------|:-----:|
-| **1. Plumbing** | Toolchain (Go, gopls), GitHub repo, prompt-recording timeline | 🚧 in progress |
-| **2. Dev system** | Project layout, TDD harness, OpenAPI/Swagger, Docker, CI | ⏳ next |
-| **3. Design & build** | Data model, endpoints, auth, batch ingestion, concurrency safety | ⏳ later |
+**Where we are:**
+- ✅ **Step 1** — toolchain verified, `github.com/ossewawiel/gowallet` public & pushed.
+- ✅ **Step 2** — the development system: layered architecture, REST + error standards, issue-driven
+  vertical-slice TDD workflow, two-layer testing (Schemathesis + Go `-race`), 3 skills, 2 subagents,
+  4 commands, GitHub slice templates.
+- ⏳ **Step 3** — build the slices. **First up: `S0`** — the walking skeleton (health + DB +
+  migrations + Swagger UI).
 
-> 🔎 The full blow-by-blow of how this was built — every prompt, decision and trade-off —
-> lives in [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md) and is summarised in [`SOLUTION.md`](SOLUTION.md).
+> 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
+> [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).
 
 ---
 
-## 🧱 Tech stack (decided so far)
+## 🧱 Tech stack (locked)
 
-| Concern | Choice | Why (short version) |
-|---------|--------|---------------------|
-| Language | **Go 1.26.x** | Assignment requirement; tiny, fast, great at safe concurrency |
-| Database | **SQLite** via `modernc.org/sqlite` | **Pure Go** — no C compiler, so anyone can `git clone && go run` |
-| Persistence | Single `.db` file, **WAL mode** | Durable across restarts; readers don't block the writer |
-| API docs | **OpenAPI 3 + Swagger UI** | Self-documenting, click-to-test endpoints |
-| Testing | **Go `testing` (strict TDD)** + Playwright | Red → green → refactor, always |
-| Packaging | **Docker** | Run identically on any machine, no local Go needed |
-| Auth | _TBD (Step 3)_ — roles: `member`, `admin` | Members manage their own wallet; admins see all |
+| Concern | Choice | Why (short) |
+|---------|--------|-------------|
+| Language | **Go 1.26.x** | tiny, fast, great at safe concurrency |
+| Routing | **stdlib `net/http`** (1.22) **+ `chi`** | stdlib does method routing; chi adds middleware, no lock-in |
+| API contract | **spec-first OpenAPI** → **`oapi-codegen`** + `kin-openapi` | `api/openapi.yaml` is the source of truth |
+| Database | **SQLite** via **`modernc.org/sqlite`** | pure Go — `git clone && go run`, no C compiler |
+| DB access | **`sqlc`** + **`goose`** migrations | type-safe SQL, no ORM reflection |
+| Auth | **JWT HS256** (`golang-jwt`, method-pinned) | roles: `member`, `admin` |
+| Testing | **Schemathesis** (contract) + **Go `-race`** (invariants) | strict TDD, two-layer source of truth |
+| Packaging | **Docker** | run identically anywhere |
 
-> 💡 For longer-term production we'd swap SQLite for **PostgreSQL/MariaDB** — the data
-> access layer is being designed so that swap is a driver change, not a rewrite.
+> 💡 Longer-term we'd swap SQLite → **PostgreSQL/MariaDB**; the layering makes that a driver change,
+> not a rewrite. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
+## 🍰 How it's built
+
+Issue-driven **vertical slices** (one full REST cycle each), strict **red → green → refactor →
+prove** TDD, proven against a two-layer source of truth. Design happens in a planning session →
+a fully-specced GitHub issue → a build session ships it.
+
+- 🏗️ Architecture & layering → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- 🌐 REST & error conventions → [`docs/REST_API_GUIDELINES.md`](docs/REST_API_GUIDELINES.md)
+- 🔄 The dev loop & quality gate → [`docs/DEVELOPMENT_FLOW.md`](docs/DEVELOPMENT_FLOW.md)
+- ✅ Invariants registry (testing SoT) → [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)
+- 🍰 Slice backlog & streams → [`docs/SLICES.md`](docs/SLICES.md)
 
 ---
 
 ## 🚀 Quickstart
 
-> ⚠️ **Not runnable yet** — the service code arrives in Step 3. This section will fill in with
-> real commands (`go run ./cmd/gowallet`, Docker, Swagger URL) as soon as there's something to run.
+> ⚠️ **Not runnable yet** — the service code arrives at slice **S0** (Step 3). This section fills in
+> with real commands the moment there's something to run.
 
 ```bash
-# Coming in Step 3:
-#   go run ./cmd/gowallet        # start the API
+# Coming at slice S0:
+#   go run ./cmd/gowallet          # start the API
 #   open http://localhost:8080/swagger
 ```
 
@@ -61,12 +83,13 @@ This repo is built in deliberate stages so the history reads like a story, not a
 
 ```
 gowallet/
-├── README.md           ← you are here
-├── SOLUTION.md         ← design, trade-offs, and the AI workflow write-up
-├── docs/
-│   ├── specifications.pdf   ← the original assignment brief
-│   └── PROMPT_LOG.md        ← chronological timeline of prompts + decisions
-└── .vscode/            ← shared editor config (Go extension + gopls)
+├── README.md            ← you are here (progress tracked every push)
+├── CLAUDE.md            ← house rules for AI sessions
+├── SOLUTION.md          ← design, trade-offs, AI-workflow write-up
+├── docs/                ← architecture · REST · dev-flow · acceptance · slices · prompt log
+│   └── specifications.pdf   ← the original brief (the final word)
+├── .claude/             ← skills · subagents · commands
+├── .github/             ← issue templates
+└── .vscode/             ← shared editor config (Go + gopls)
 ```
-
-_(application code directories land in Steps 2–3.)_
+_(application code — `cmd/`, `internal/`, `api/`, `test/` — lands in Step 3.)_

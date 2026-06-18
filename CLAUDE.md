@@ -63,12 +63,29 @@ comments where it helps. If it's prose a human reads, it follows this voice.
 
 ---
 
-## 🔁 The prompt log — keep it alive (standing order)
+## 🔁 The prompt log — keep it alive & granular (standing order)
 
-After every meaningful exchange or chunk of work, **append an entry to `docs/PROMPT_LOG.md`**
-(curated: 🧑 asked · 🤖 did · ✅ accepted / ✏️ edited · 💡 why). This is a hard requirement from
-the brief — it's how the AI workflow gets graded. Prefer the **`doc-updater`** subagent for this
-so it doesn't clog the main context. Keep `SOLUTION.md` in sync when decisions change.
+After every meaningful exchange or decision, **append to `docs/PROMPT_LOG.md`**. This is a hard
+requirement from the brief — it's how the AI workflow gets graded — so err toward **more detail,
+finer grain**:
+
+- **One entry per exchange or decision**, not per whole "step." If a single message holds 3
+  decisions, log 3 — don't collapse them into one vague line.
+- Each entry captures: ⏱️ when · 🧑 **Asked** (the real request, tightly paraphrased) · 🔎 **Explored**
+  (options weighed + roads not taken) · 🤖 **Did** (files, commands, installs) · ✅ **Accepted** /
+  ✏️ **Edited** / ❌ **Rejected** (each decision + its reason) · 💡 **Why** · 📚 **Sources** ·
+  🔗 **Artifacts** (commit SHAs, file paths, issue/PR #s).
+- Still **curated, not a transcript** — capture the signal and the *why*, skip the noise.
+- Prefer the **`doc-updater`** subagent so it doesn't clog the main context. Keep `SOLUTION.md` in
+  sync when a decision changes.
+
+---
+
+## 📈 README tracks progression (standing order)
+
+`README.md` is the **front door** — a reviewer should see current state at a glance without digging
+through the prompt log. Keep its **Progress** section accurate and **update it on every push** (what
+step/slice just landed, what's next). The **`doc-updater`** subagent owns this alongside the prompt log.
 
 ---
 
@@ -89,4 +106,5 @@ so it doesn't clog the main context. Keep `SOLUTION.md` in sync when decisions c
 ## 🚦 Quality gate (must be green before "done")
 
 `gofmt` ✓ · `go vet` ✓ · `golangci-lint` ✓ · `go build ./...` ✓ · `go test -race ./...` ✓ ·
-Schemathesis ✓ · `docs/ACCEPTANCE.md` invariants for the slice ✓ · `docs/PROMPT_LOG.md` updated ✓.
+Schemathesis ✓ · `docs/ACCEPTANCE.md` invariants for the slice ✓ · `docs/PROMPT_LOG.md` updated ✓ ·
+`README.md` progression updated ✓.
