@@ -37,6 +37,7 @@ func bootRealApp(t *testing.T) *httptest.Server {
 
 	router := httpapi.NewRouter(httpapi.Deps{
 		Health:   wallet.NewHealthService(store),
+		Wallet:   wallet.NewWalletService(store, store),
 		SpecYAML: specYAML,
 	})
 

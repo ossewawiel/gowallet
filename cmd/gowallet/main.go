@@ -68,6 +68,7 @@ func run(cfg config) error {
 	// the router. httpapi never sees sqlitestore — only the wallet service.
 	router := httpapi.NewRouter(httpapi.Deps{
 		Health:   wallet.NewHealthService(store),
+		Wallet:   wallet.NewWalletService(store, store),
 		SpecYAML: specYAML,
 	})
 

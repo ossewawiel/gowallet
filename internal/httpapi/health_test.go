@@ -23,7 +23,17 @@ func (f fakePinger) Ping(_ context.Context) error { return f.err }
 func newServer(t *testing.T, pinger wallet.Pinger) http.Handler {
 	t.Helper()
 	svc := wallet.NewHealthService(pinger)
-	return httpapi.NewRouter(httpapi.Deps{Health: svc, SpecYAML: []byte("openapi: 3.0.3\n")})
+	// A valid minimal spec: the validator must load it at startup. /healthz is
+	// covered by the contract; we keep it here so the route is validated too.
+	spec := []byte("openapi: 3.0.3\n" +
+		"info: { title: t, version: '0' }\n" +
+		"paths:\n" +
+		"  /healthz:\n" +
+		"    get:\n" +
+		"      responses:\n" +
+		"        '200': { description: ok }\n" +
+		"        '503': { description: down }\n")
+	return httpapi.NewRouter(httpapi.Deps{Health: svc, SpecYAML: spec})
 }
 
 func TestHealthz_200_WhenDBUp(t *testing.T) {

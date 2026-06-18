@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20build%20(next)-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S1%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -30,9 +30,15 @@
   [`docs/slices/`](docs/slices/), **6 GitHub issues opened** (#1–#6).
   - ✅ **[S0 / #1](https://github.com/ossewawiel/gowallet/issues/1)** — walking skeleton **built &
     green**: `GET /healthz` (real DB ping), WAL/PRAGMAs, goose runner, `/swagger`, the 3-package
-    layout wired end-to-end. Full quality gate passing (gofmt · vet · lint · build · `-race` ·
-    Schemathesis). On branch `slice/s0-skeleton`, PR pending.
-  - ➡️ **Next:** fan out — 🅰️ S1 (accounts + earn) · 🅱️ S3 (auth) · 🅲 S4 (audit).
+    layout wired end-to-end. Full quality gate passing. Merged to `main` via PR #7.
+  - ✅ **[S1 / #2](https://github.com/ossewawiel/gowallet/issues/2)** — accounts + earn + balance
+    **built & green**: `POST /accounts`, `GET /accounts/{id}`, `POST /transactions` (earn),
+    `GET /accounts/{id}/balance`. Idempotent `ref` (one `sql.Tx` + single writer), derived balance,
+    `kin-openapi` request validation. **INV-1/2/5/6 proven under `-race`**; full quality gate green
+    (gofmt · vet · lint · build · `-race` · Schemathesis **3903 cases / 0 issues**). On branch
+    `slice/s1-accounts-earn`.
+  - ➡️ **Next:** 🅰️ **S2 — Spend + no-negative guard** (extends the earn tx with a balance check;
+    INV-3/4) · in parallel 🅱️ S3 (auth) · 🅲 S4 (audit).
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

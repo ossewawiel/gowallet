@@ -22,8 +22,135 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+
+  /accounts:
+    post:
+      operationId: createAccount
+      summary: Create a member account
+      tags: [accounts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewAccount' }
+      responses:
+        '201':
+          description: Account created.
+          headers:
+            Location: { schema: { type: string }, description: URL of the new account }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+          links:
+            GetAccount:
+              operationId: getAccount
+              parameters: { account_id: '$response.body#/account_id' }
+            GetBalance:
+              operationId: getBalance
+              parameters: { account_id: '$response.body#/account_id' }
+        '400': { description: Malformed body., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: account_id already exists., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /accounts/{account_id}:
+    get:
+      operationId: getAccount
+      summary: Read one account
+      tags: [accounts]
+      parameters:
+        - { name: account_id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$' } }
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { description: Malformed account_id in the path., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: No such account., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /accounts/{account_id}/balance:
+    get:
+      operationId: getBalance
+      summary: Current balance for an account
+      tags: [accounts]
+      parameters:
+        - { name: account_id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$' } }
+      responses:
+        '200':
+          description: The current balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Balance' }
+        '400': { description: Malformed account_id in the path., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: No such account., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /transactions:
+    post:
+      operationId: createTransaction
+      summary: Record an earn transaction (idempotent on ref)
+      tags: [transactions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewTransaction' }
+      responses:
+        '201':
+          description: Transaction recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '200':
+          description: Idempotent replay — the existing transaction for this ref.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { description: Malformed body or kind not allowed., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: account_id does not exist., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
 components:
   schemas:
+    NewAccount:
+      type: object
+      additionalProperties: false
+      required: [account_id, name]
+      properties:
+        account_id: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$', example: member-123 }
+        name:       { type: string, minLength: 1, example: Rina }
+    Account:
+      type: object
+      additionalProperties: false
+      required: [account_id, name, created_at]
+      properties:
+        account_id: { type: string, example: member-123 }
+        name:       { type: string, example: Rina }
+        created_at: { type: string, format: date-time }
+    NewTransaction:
+      type: object
+      additionalProperties: false
+      required: [ref, account_id, kind, points, occurred_at]
+      properties:
+        ref:         { type: string, minLength: 1, maxLength: 64, example: tx-001 }
+        account_id:  { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$', example: member-123 }
+        kind:        { type: string, enum: [earn], description: "S1 = earn only; S2 widens to [earn, spend]" }
+        points:      { type: integer, format: int64, minimum: 1, maximum: 9223372036854775807, example: 150 }
+        occurred_at: { type: string, format: date-time, example: "2024-06-01T10:00:00Z" }
+    Transaction:
+      type: object
+      additionalProperties: false
+      required: [ref, account_id, kind, points, occurred_at]
+      properties:
+        ref:         { type: string, example: tx-001 }
+        account_id:  { type: string, example: member-123 }
+        kind:        { type: string, enum: [earn, spend] }
+        points:      { type: integer, format: int64, example: 150 }
+        occurred_at: { type: string, format: date-time }
+    Balance:
+      type: object
+      additionalProperties: false
+      required: [account_id, balance]
+      properties:
+        account_id: { type: string, example: member-123 }
+        balance:    { type: integer, format: int64, example: 150 }
     Health:
       type: object
       additionalProperties: false
@@ -42,6 +169,6 @@ components:
           additionalProperties: false
           required: [code, message]
           properties:
-            code:       { type: string, description: stable snake_case machine code }
-            message:    { type: string, description: human-friendly, never a stack trace/SQL }
+            code:       { type: string, description: "stable snake_case machine code" }
+            message:    { type: string, description: "human-friendly, never a stack trace/SQL" }
             request_id: { type: string }

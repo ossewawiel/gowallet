@@ -10,6 +10,7 @@ import (
 // service; identity and per-request data live in r.Context().
 type server struct {
 	health *wallet.HealthService
+	wallet *wallet.WalletService
 }
 
 // GetHealth pings the database and reports readiness.

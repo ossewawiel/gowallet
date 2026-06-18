@@ -2,12 +2,30 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/ossewawiel/gowallet/internal/httpapi/gen"
+	"github.com/ossewawiel/gowallet/internal/wallet"
 )
+
+// writeDomainError is the ONE place domain sentinels map to HTTP. Every handler
+// funnels its errors through here so status codes + envelope codes stay
+// consistent across the whole API (per docs/REST_API_GUIDELINES.md).
+func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, wallet.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "resource not found")
+	case errors.Is(err, wallet.ErrAccountExists):
+		writeError(w, r, http.StatusConflict, "account_exists", "account_id already exists")
+	case errors.Is(err, wallet.ErrInvalidInput):
+		writeError(w, r, http.StatusBadRequest, "invalid_input", "request body is invalid")
+	default:
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+	}
+}
 
 // writeError emits the single JSON error envelope used across the whole API
 // (per docs/REST_API_GUIDELINES.md). One place, so every slice stays
