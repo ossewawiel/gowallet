@@ -633,4 +633,82 @@ the walking skeleton, via `/design-slice`).
   `internal/httpapi/audit.go` · `internal/httpapi/identity.go` (`requireAdmin`) · `api/openapi.yaml`
   · issue #5 (closes #5 once the PR merges).
 
+### ⏱️ 2026-06-18 · Entry 23 — S5 designed (CSV batch ingestion, design-only)
+
+- 🧑 **Asked:** `/design-slice S5 — CSV batch ingestion`: a `POST /batch` multipart CSV upload (vs a
+  CLI), idempotent on reprocess, returns summary counts, and audits each row. Enforce INV-9 & INV-10.
+- 🔎 **Explored / decided:**
+  - **Interface → `POST /batch` (multipart/form-data file upload)**, not a CLI. ❌ A CLI bypasses the
+    contract layer; ✅ HTTP keeps it **spec-first**, Schemathesis-fuzzable, Bearer-protected, and
+    demoable in Swagger for the Loom.
+  - **Status → `200` synchronous** (process the whole file, return the summary). ❌ Rejected `202` —
+    that's fire-and-forget async, and we're synchronous.
+  - **Rejections are data, not HTTP errors:** bad rows / over-spend / unknown account → still `200`,
+    tallied in the summary's `rejected`. Only a **broken upload** (no file part / unreadable header)
+    → `400`. 💡 The batch *succeeded*; individual rows failing is a business outcome, not a transport
+    error.
+  - **Access → admin-only** (member → 403). 💡 A batch carries arbitrary `account_id`s across
+    accounts, and only admin acts on any account — reuses the existing `requireAdmin` seam.
+  - **Summary → counts only** (`processed / accepted / rejected / duplicates`). 💡 Brief asks for a
+    *short* summary; per-row detail already lives in `GET /audit` (S4). Clean separation, no overlap.
+  - **No migration, no new wallet logic.** A batch row is just another earn/spend, so it reuses
+    everything: idempotency ← `transactions.ref` UNIQUE (S1); per-row attempt records ← `audit_log`
+    (S4); same-account/concurrent safety ← S2's single-writer + atomic spend guard. The slice is a
+    thin `internal/httpapi/batch.go` handler driving existing services (matches ARCHITECTURE: CSV
+    ingestion lives as an httpapi handler).
+  - **New invariant → INV-23** (batch path audits every row) on top of the pre-registered INV-9/INV-10.
+- 🤖 **Did:** Enriched GitHub issue **#6** in place (`gh issue edit 6`) with the full design —
+  OpenAPI fragment (`/batch` path + `BatchSummary` schema), the "no migration" note, an
+  outcome-classification table, INV-9/10/23, the red-test list (acceptance + unit), acceptance
+  criteria, and build notes. Registered **INV-23** in `docs/ACCEPTANCE.md`.
+- 🔗 **Artifacts:** issue https://github.com/ossewawiel/gowallet/issues/6 · `docs/ACCEPTANCE.md`
+  (INV-23 row).
+- 💡 **Why it matters:** this is the **final feature slice** — it proves the duplicate/concurrency
+  story end-to-end *through the batch path* while reusing every prior slice instead of adding new
+  surface area.
+
+### ⏱️ 2026-06-18 · Entry 24 — S5 built (CSV batch ingestion, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 6` — build **S5** (CSV batch ingestion) end-to-end with strict
+  spec-first TDD (red → green → refactor → prove).
+- 🤖 **Did — spec-first RED → GREEN → REFACTOR → PROVE on branch `slice/s5-batch`:**
+  - **Spec-first:** added `POST /batch` (admin-only, `multipart/form-data` file upload →
+    `200 BatchSummary`) + the `BatchSummary` schema to `api/openapi.yaml`; regenerated with
+    `oapi-codegen`. Also fixed an **unquoted YAML `400` description** whose em-dash + comma broke
+    flow-mapping parsing — quoted it (contract-preserving, no codegen impact).
+  - **New code:** `internal/httpapi/batch.go` — the `IngestBatch` handler + two pure, unit-tested
+    helpers: `parseRow` (CSV row → `wallet.Transaction`) and `classifyOutcome` ((created, err) →
+    audit outcome + reason + summary bucket). Parses with stdlib `encoding/csv` + `r.FormFile`.
+  - **No migration, no new wallet/sqlitestore logic** — a batch row rides the existing
+    `RecordEarn`/`RecordSpend` (idempotent via `transactions.ref` UNIQUE, S1), S2's single-writer +
+    atomic spend guard, and the S4 audit writer (called **off the money path**, after each txn
+    resolves). The slice is a thin transport handler driving services that already exist.
+- ✅ **Accepted / decisions:**
+  - **`200` synchronous with a summary** — rejected rows are **data**, not HTTP errors; tallied in
+    the summary's `rejected`. Only a **broken upload** (missing file part / unreadable-or-absent CSV
+    header) → **400**. Admin-only (member → **403**).
+  - **Schemathesis false-positive handled by exclusion, not by loosening validation:** `/batch`
+    tripped a `positive_data_acceptance` finding of the **same class** as the known `/token` 422 —
+    Schemathesis sends an empty/headerless `format: binary` file and expects 2xx, but a headerless
+    upload is a *documented* `400`. Per the issue, did **NOT** loosen validation; added
+    `--exclude-checks positive_data_acceptance` (alongside the existing `negative_data_rejection`)
+    and documented both as known non-issues in `CLAUDE.md`. All structural checks stay live and pass
+    for `/batch`.
+- 🧪 **Tests added:**
+  - **unit** — `internal/httpapi/batch_test.go`: `TestParseRow_Valid` / `_ValidSpend` / `_Rejects`
+    (7-case table) + `TestClassifyOutcome` (4-case table);
+  - **acceptance** — `test/acceptance/s5_batch_test.go`: `TestBatch_Reprocess_Idempotent` (**INV-9**),
+    `TestBatch_Summary` (**INV-10**), `TestBatch_AuditsEachRow` (**INV-23**),
+    `TestBatch_SameAccountCloseTogether`, `TestBatch_ConcurrentReprocess_Idempotent` (`-race`),
+    `TestBatch_AdminOnly`, `TestBatch_NoToken_401`, `TestBatch_BadUpload_400` + a `postBatch`
+    multipart helper.
+- ✅ **Gate green:** gofmt ✓ · go vet ✓ · golangci-lint **0 issues** ✓ · `go build ./...` ✓ ·
+  `go test -race ./...` ✓ (incl. concurrent reprocess) · Schemathesis exit **0** ✓.
+- 💡 **Why it matters:** the **final feature slice** — it proves the duplicate + concurrency story
+  end-to-end *through the batch path* while reusing every prior slice, with **no new domain logic and
+  no new tables**.
+- 🔗 **Artifacts:** issue #6 · branch `slice/s5-batch` · files `internal/httpapi/batch.go`,
+  `internal/httpapi/batch_test.go`, `test/acceptance/s5_batch_test.go`, `api/openapi.yaml`,
+  `CLAUDE.md`.
+
 <!-- New entries go below this line -->

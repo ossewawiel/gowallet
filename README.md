@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S4%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S5%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -59,15 +59,22 @@
     **INV-11/21/22 proven**; full quality gate green (gofmt · vet · lint **0 issues** · build · `-race`
     · Schemathesis clean incl. stateful on the new route). On branch `slice/s4-audit` (commit `fbd8d8a`,
     ready for PR).
-  - ➡️ **Next:** with **S2 + S4 both landed**, 🅲 **S5 — CSV batch ingest** (INV-9/10) is now
-    **unblocked** — the `AuditService` writer is ready for its first real caller. Also queued: 🅰️
-    **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13)).
-  - 🔑 **Backlog +1:** 🅱️ **S6 — Login** (credential-based token issuance,
-    [#10](https://github.com/ossewawiel/gowallet/issues/10)) — a real `POST /login` replacing the S3
-    demo mint; seeds demo creds (see **🔑 Test credentials** below).
-  - 📋 **Backlog +2:** 🅰️ **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13))
-    — `GET /accounts` (admin) + `GET /accounts/{id}/transactions` (own/admin). Plus **S4 (audit) now
-    exposes `GET /audit`** (admin-only) so the audit log is listable.
+  - ✅ **[S5 / #6](https://github.com/ossewawiel/gowallet/issues/6)** — CSV batch ingestion
+    **built & green**: an admin-only **`POST /batch`** (`multipart/form-data` file upload →
+    `200 BatchSummary`). Rejected rows are **data, not errors** — they're tallied in the summary
+    (`processed / accepted / rejected / duplicates`); only a broken *upload* → **400**. **No
+    migration, no new domain logic** — each row rides the existing `RecordEarn`/`RecordSpend`
+    (idempotent via `ref` UNIQUE), the S2 atomic spend guard, and the S4 audit writer (one entry per
+    row, off the money path). **INV-9/10/23 proven** (incl. a concurrent-reprocess `-race` test);
+    full quality gate green (gofmt · vet · lint **0 issues** · build · `-race` · Schemathesis exit
+    0). On branch `slice/s5-batch` (ready for PR). 🎉 **All core feature slices now landed.**
+  - ➡️ **Next:** two slices remain, both still open —
+    - 🅱️ **S6 — Login** (credential-based token issuance,
+      [#10](https://github.com/ossewawiel/gowallet/issues/10)): a real `POST /login` replacing the S3
+      demo mint; bcrypt-hashed secrets + seeded demo creds (see **🔑 Test credentials** below).
+    - 🅰️ **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13)):
+      `GET /accounts` (admin) + `GET /accounts/{id}/transactions` (own/admin). (S4 already exposes the
+      admin-only `GET /audit`.)
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

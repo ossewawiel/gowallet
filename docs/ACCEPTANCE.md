@@ -24,8 +24,8 @@ final testing = every row here is green at once.
 | INV-6 | **No wire-crossing:** N users hitting their own accounts only ever see their own data | `TestIsolation_NoCrossUserLeak` (`-race`) | S1 | ✅ |
 | INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S3 | ✅ |
 | INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S3 | ✅ |
-| INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S5 | ⬜ |
-| INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S5 | ⬜ |
+| INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S5 | ✅ |
+| INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S5 | ✅ |
 | INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ✅ |
 | INV-12 | Algorithm is **pinned**: a token with `alg:none` or any non-HS256 algorithm is rejected (401) — defeats alg:none / RS↔HS confusion | `TestVerify_AlgNone_Rejected`, `TestVerify_NonHS256_Rejected`, `TestAuth_AlgConfusion_Rejected` | S3 | ✅ |
 | INV-13 | Identity is sourced from the **verified token only** — a body/URL `account_id` that disagrees never grants access | `TestAuth_IdentityFromTokenOnly` | S3 | ✅ |
@@ -38,8 +38,12 @@ final testing = every row here is green at once.
 | INV-20 | Transaction list returns **only that account's** transactions (no cross-account leak), newest-first | `TestListTransactions_NoCrossAccountLeak` | S7 | ⬜ |
 | INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ✅ |
 | INV-22 | The audit log is **append-only**: the same `ref` recorded twice yields two distinct rows (no idempotency collision — opposite of the `transactions` table) | `TestAudit_AppendOnly_SameRefTwice` | S4 | ✅ |
+| INV-23 | Every **batch row** produces an audit entry with its outcome + reason (the batch HTTP path is wired end-to-end to the S4 audit writer) | `TestBatch_AuditsEachRow` | S5 | ✅ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
+
+> 🧩 **INV-23 vs INV-11:** INV-11 proves the *store* audits a seeded write; INV-23 proves the
+> **`POST /batch` path** actually calls the S4 audit writer for *every* CSV row — the end-to-end wiring.
 
 ---
 

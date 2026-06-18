@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -159,6 +161,21 @@ type Balance struct {
 	Balance   int64  `json:"balance"`
 }
 
+// BatchSummary Result of a batch ingest — total rows seen and how each resolved.
+type BatchSummary struct {
+	// Accepted rows newly applied (created)
+	Accepted int64 `json:"accepted"`
+
+	// Duplicates rows whose ref was already seen (idempotent replay)
+	Duplicates int64 `json:"duplicates"`
+
+	// Processed total data rows seen (= accepted + rejected + duplicates)
+	Processed int64 `json:"processed"`
+
+	// Rejected rows refused (bad row / unknown account / would go negative)
+	Rejected int64 `json:"rejected"`
+}
+
 // Error Single error envelope used across the whole API (RFC 9457-ish, trimmed).
 type Error struct {
 	Error struct {
@@ -249,8 +266,17 @@ type ListAuditParams struct {
 	AccountId *string `form:"account_id,omitempty" json:"account_id,omitempty"`
 }
 
+// IngestBatchMultipartBody defines parameters for IngestBatch.
+type IngestBatchMultipartBody struct {
+	// File CSV with header `ref,account_id,kind,points,occurred_at`. Example row: tx-001,member-123,earn,150,2024-06-01T10:00:00Z
+	File openapi_types.File `json:"file"`
+}
+
 // CreateAccountJSONRequestBody defines body for CreateAccount for application/json ContentType.
 type CreateAccountJSONRequestBody = NewAccount
+
+// IngestBatchMultipartRequestBody defines body for IngestBatch for multipart/form-data ContentType.
+type IngestBatchMultipartRequestBody IngestBatchMultipartBody
 
 // IssueTokenJSONRequestBody defines body for IssueToken for application/json ContentType.
 type IssueTokenJSONRequestBody = TokenRequest
@@ -272,6 +298,9 @@ type ServerInterface interface {
 	// List recorded transaction attempts (admin only), newest-first
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
+	// Ingest a CSV of transactions (admin only); idempotent on ref, returns a summary
+	// (POST /batch)
+	IngestBatch(w http.ResponseWriter, r *http.Request)
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -308,6 +337,12 @@ func (_ Unimplemented) GetBalance(w http.ResponseWriter, r *http.Request, accoun
 // List recorded transaction attempts (admin only), newest-first
 // (GET /audit)
 func (_ Unimplemented) ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Ingest a CSV of transactions (admin only); idempotent on ref, returns a summary
+// (POST /batch)
+func (_ Unimplemented) IngestBatch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -452,6 +487,26 @@ func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAudit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IngestBatch operation middleware
+func (siw *ServerInterfaceWrapper) IngestBatch(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IngestBatch(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -633,6 +688,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/audit", wrapper.ListAudit)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/batch", wrapper.IngestBatch)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/healthz", wrapper.GetHealth)
@@ -945,6 +1003,70 @@ func (response ListAudit403JSONResponse) VisitListAuditResponse(w http.ResponseW
 	return err
 }
 
+type IngestBatchRequestObject struct {
+	Body *multipart.Reader
+}
+
+type IngestBatchResponseObject interface {
+	VisitIngestBatchResponse(w http.ResponseWriter) error
+}
+
+type IngestBatch200JSONResponse BatchSummary
+
+func (response IngestBatch200JSONResponse) VisitIngestBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IngestBatch400JSONResponse Error
+
+func (response IngestBatch400JSONResponse) VisitIngestBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IngestBatch401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response IngestBatch401JSONResponse) VisitIngestBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IngestBatch403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response IngestBatch403JSONResponse) VisitIngestBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -1150,6 +1272,9 @@ type StrictServerInterface interface {
 	// List recorded transaction attempts (admin only), newest-first
 	// (GET /audit)
 	ListAudit(ctx context.Context, request ListAuditRequestObject) (ListAuditResponseObject, error)
+	// Ingest a CSV of transactions (admin only); idempotent on ref, returns a summary
+	// (POST /batch)
+	IngestBatch(ctx context.Context, request IngestBatchRequestObject) (IngestBatchResponseObject, error)
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -1292,6 +1417,37 @@ func (sh *strictHandler) ListAudit(w http.ResponseWriter, r *http.Request, param
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListAuditResponseObject); ok {
 		if err := validResponse.VisitListAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IngestBatch operation middleware
+func (sh *strictHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
+	var request IngestBatchRequestObject
+
+	if reader, err := r.MultipartReader(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+		return
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IngestBatch(ctx, request.(IngestBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IngestBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IngestBatchResponseObject); ok {
+		if err := validResponse.VisitIngestBatchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
