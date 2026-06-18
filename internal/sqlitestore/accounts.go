@@ -19,12 +19,16 @@ const rfc3339 = "2006-01-02T15:04:05Z07:00"
 // queries returns a sqlc Queries bound to the shared pool.
 func (s *Store) queries() *gen.Queries { return gen.New(s.db) }
 
-// CreateAccount inserts a new account. A duplicate account_id (PRIMARY KEY
+// CreateAccount inserts a new account, storing the optional bcrypt passwordHash
+// ("" ⇒ NULL column ⇒ the account can't log in). role is not in the insert, so
+// it takes the table default 'member'. A duplicate account_id (PRIMARY KEY
 // violation) maps to wallet.ErrAccountExists.
-func (s *Store) CreateAccount(ctx context.Context, a wallet.Account) error {
+func (s *Store) CreateAccount(ctx context.Context, a wallet.Account, passwordHash string) error {
+	pw := sql.NullString{String: passwordHash, Valid: passwordHash != ""}
 	err := s.queries().CreateAccount(ctx, gen.CreateAccountParams{
-		AccountID: a.ID,
-		Name:      a.Name,
+		AccountID:    a.ID,
+		Name:         a.Name,
+		PasswordHash: pw,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -33,6 +37,24 @@ func (s *Store) CreateAccount(ctx context.Context, a wallet.Account) error {
 		return fmt.Errorf("create account: %w", err)
 	}
 	return nil
+}
+
+// GetCredential reads the stored bcrypt hash + role for a login check. A NULL
+// password_hash comes back as "" (the service treats it as an invalid
+// credential). ErrNotFound if the account is absent.
+func (s *Store) GetCredential(ctx context.Context, id string) (string, wallet.Role, error) {
+	row, err := s.queries().GetAccountCredential(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", wallet.ErrNotFound
+		}
+		return "", "", fmt.Errorf("get credential: %w", err)
+	}
+	role, err := wallet.ParseRole(row.Role)
+	if err != nil {
+		return "", "", fmt.Errorf("stored role %q: %w", row.Role, err)
+	}
+	return row.PasswordHash.String, role, nil
 }
 
 // GetAccount reads one account. ErrNotFound if absent.

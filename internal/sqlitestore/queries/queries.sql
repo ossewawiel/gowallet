@@ -1,8 +1,15 @@
 -- name: CreateAccount :exec
-INSERT INTO accounts (account_id, name) VALUES (?, ?);
+-- extended: now also stores the optional password_hash. role is deliberately
+-- NOT in the column list, so it always takes the table default 'member'.
+INSERT INTO accounts (account_id, name, password_hash) VALUES (?, ?, ?);
 
 -- name: GetAccount :one
 SELECT account_id, name, created_at FROM accounts WHERE account_id = ?;
+
+-- name: GetAccountCredential :one
+-- password_hash is nullable, so sqlc returns sql.NullString. A NULL (or absent
+-- account) is treated by the service as an invalid credential (no enumeration).
+SELECT password_hash, role FROM accounts WHERE account_id = ?;
 
 -- name: AccountExists :one
 SELECT EXISTS(SELECT 1 FROM accounts WHERE account_id = ?) AS present;

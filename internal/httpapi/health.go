@@ -8,7 +8,7 @@ import (
 )
 
 // server implements gen.ServerInterface. It holds the shared services plus the
-// JWT signing config used by POST /token. Everything request-specific (the
+// JWT signing config used by POST /login. Everything request-specific (the
 // caller's verified identity) rides in r.Context(), never on this struct.
 type server struct {
 	health    *wallet.HealthService

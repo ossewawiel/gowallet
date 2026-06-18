@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S5%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S6%20landed-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -68,10 +68,16 @@
     row, off the money path). **INV-9/10/23 proven** (incl. a concurrent-reprocess `-race` test);
     full quality gate green (gofmt · vet · lint **0 issues** · build · `-race` · Schemathesis exit
     0). On branch `slice/s5-batch` (ready for PR). 🎉 **All core feature slices now landed.**
-  - ➡️ **Next:** two slices remain, both still open —
-    - 🅱️ **S6 — Login** (credential-based token issuance,
-      [#10](https://github.com/ossewawiel/gowallet/issues/10)): a real `POST /login` replacing the S3
-      demo mint; bcrypt-hashed secrets + seeded demo creds (see **🔑 Test credentials** below).
+  - ✅ **[S6 / #10](https://github.com/ossewawiel/gowallet/issues/10)** — login **built & green**: a
+    real **`POST /login`** that verifies `{account_id, secret}` against a **bcrypt** hash and issues a
+    JWT carrying the account's **stored** role (a member can't self-mint admin). Unknown account and
+    wrong secret return an **identical 401** (+ dummy bcrypt compare) → **no user enumeration**. The
+    credential-free `POST /token` demo mint is **removed**; migration
+    `20260619090000_s6_account_credentials.sql` adds `password_hash` + `role` and seeds the demo creds
+    (see **🔑 Test credentials** below). **INV-14..17 proven**; full quality gate green (gofmt · vet ·
+    lint **0 issues** · build · `-race` · Schemathesis **6303 cases / 0 failures**, admin token via
+    `/login`). On branch `slice/s6-login`.
+  - ➡️ **Next:** one slice remains —
     - 🅰️ **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13)):
       `GET /accounts` (admin) + `GET /accounts/{id}/transactions` (own/admin). (S4 already exposes the
       admin-only `GET /audit`.)
@@ -148,8 +154,8 @@ curl -X POST localhost:8080/login \
 # → { "token": "<JWT>" }
 ```
 
-> ⏳ `POST /login` + these seeds arrive with **[S6 · login](docs/slices/S6.md)**. Until then, the S3
-> demo `POST /token` mints tokens directly (no credential check).
+> ✅ `POST /login` + these seeds landed with **[S6 · login](docs/slices/S6.md)**. The old credential-
+> free `POST /token` demo mint has been **removed** — a token now requires a real credential.
 
 ---
 

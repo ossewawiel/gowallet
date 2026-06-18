@@ -14,6 +14,7 @@ import (
 // contract: RecordTransaction is insert-or-replay keyed on ref.
 type fakeRepo struct {
 	accounts map[string]wallet.Account
+	hashes   map[string]string
 	byRef    map[string]wallet.Transaction
 	// recordErr, when non-nil, is returned by RecordTransaction for a fresh ref.
 	// Lets a unit test drive the store-level error path (e.g. insufficient
@@ -24,11 +25,12 @@ type fakeRepo struct {
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		accounts: map[string]wallet.Account{},
+		hashes:   map[string]string{},
 		byRef:    map[string]wallet.Transaction{},
 	}
 }
 
-func (f *fakeRepo) CreateAccount(_ context.Context, a wallet.Account) error {
+func (f *fakeRepo) CreateAccount(_ context.Context, a wallet.Account, passwordHash string) error {
 	if _, ok := f.accounts[a.ID]; ok {
 		return wallet.ErrAccountExists
 	}
@@ -36,7 +38,18 @@ func (f *fakeRepo) CreateAccount(_ context.Context, a wallet.Account) error {
 		a.CreatedAt = time.Now().UTC()
 	}
 	f.accounts[a.ID] = a
+	f.hashes[a.ID] = passwordHash
 	return nil
+}
+
+// GetCredential satisfies wallet.AccountRepository. The base fakeRepo stores
+// member-role accounts only; the credential variant (credRepo) overrides this.
+func (f *fakeRepo) GetCredential(_ context.Context, id string) (string, wallet.Role, error) {
+	h, ok := f.hashes[id]
+	if !ok {
+		return "", "", wallet.ErrNotFound
+	}
+	return h, wallet.RoleMember, nil
 }
 
 func (f *fakeRepo) GetAccount(_ context.Context, id string) (wallet.Account, error) {
@@ -88,7 +101,7 @@ func newService(t *testing.T) (*wallet.WalletService, *fakeRepo) {
 
 func mustAccount(t *testing.T, svc *wallet.WalletService, id string) {
 	t.Helper()
-	if err := svc.CreateAccount(context.Background(), wallet.Account{ID: id, Name: "T"}); err != nil {
+	if err := svc.CreateAccount(context.Background(), wallet.Account{ID: id, Name: "T"}, ""); err != nil {
 		t.Fatalf("CreateAccount(%s): %v", id, err)
 	}
 }
@@ -146,7 +159,7 @@ func TestRecordSpend_PropagatesInsufficientBalance(t *testing.T) {
 	repo := newFakeRepo()
 	repo.recordErr = wallet.ErrInsufficientBalance
 	svc := wallet.NewWalletService(repo, repo)
-	if err := svc.CreateAccount(context.Background(), wallet.Account{ID: "member-1", Name: "T"}); err != nil {
+	if err := svc.CreateAccount(context.Background(), wallet.Account{ID: "member-1", Name: "T"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 
@@ -209,7 +222,7 @@ func TestCreateAccount_DuplicateID_Conflict(t *testing.T) {
 	svc, _ := newService(t)
 	mustAccount(t, svc, "member-1")
 
-	err := svc.CreateAccount(context.Background(), wallet.Account{ID: "member-1", Name: "Again"})
+	err := svc.CreateAccount(context.Background(), wallet.Account{ID: "member-1", Name: "Again"}, "")
 	if !errors.Is(err, wallet.ErrAccountExists) {
 		t.Fatalf("err: want ErrAccountExists, got %v", err)
 	}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/ossewawiel/gowallet/internal/sqlitestore"
 	"github.com/ossewawiel/gowallet/internal/wallet"
 )
@@ -59,7 +61,7 @@ func seedEarn(t *testing.T, store *sqlitestore.Store, ref, id string, pts int64)
 func TestRecordSpend_BelowZero_Rejected_NoWrite(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()
-	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}); err != nil {
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 	seedEarn(t, store, "earn-1", "member-1", 100)
@@ -80,7 +82,7 @@ func TestRecordSpend_BelowZero_Rejected_NoWrite(t *testing.T) {
 func TestRecordSpend_ExactToZero_Allowed(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()
-	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}); err != nil {
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 	seedEarn(t, store, "earn-1", "member-1", 100)
@@ -98,7 +100,7 @@ func TestRecordSpend_ExactToZero_Allowed(t *testing.T) {
 func TestRecordSpend_DuplicateRef_Replay(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()
-	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}); err != nil {
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 	seedEarn(t, store, "earn-1", "member-1", 100)
@@ -126,7 +128,7 @@ func TestStore_InsertDuplicateRef_SecondIsNoOp(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()
 
-	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}); err != nil {
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 
@@ -311,11 +313,59 @@ func TestAudit_ListByAccount_FiltersAndNoLeak(t *testing.T) {
 	}
 }
 
+// TestStore_PasswordHashedNotPlaintext (INV-17) — CreateAccount with a secret
+// stores a bcrypt hash, never the plaintext, and that hash verifies.
+func TestStore_PasswordHashedNotPlaintext(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	const secret = "s3cr3t-x"
+	h, err := bcrypt.GenerateFromPassword([]byte(secret), 12)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, string(h)); err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+
+	stored, role, err := store.GetCredential(ctx, "member-1")
+	if err != nil {
+		t.Fatalf("GetCredential: %v", err)
+	}
+	if stored == secret {
+		t.Fatalf("password stored as plaintext")
+	}
+	if role != wallet.RoleMember {
+		t.Fatalf("role: want member (table default), got %q", role)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(stored), []byte(secret)); err != nil {
+		t.Fatalf("stored hash does not verify against the secret: %v", err)
+	}
+}
+
+// TestStore_GetCredential_Roundtrip — the seeded admin credential reads back
+// with the admin role and a hash that verifies the seeded secret.
+func TestStore_GetCredential_Roundtrip(t *testing.T) {
+	store := openMigrated(t)
+	ctx := context.Background()
+
+	hash, role, err := store.GetCredential(ctx, "admin-001")
+	if err != nil {
+		t.Fatalf("GetCredential(admin-001): %v", err)
+	}
+	if role != wallet.RoleAdmin {
+		t.Fatalf("seeded role: want admin, got %q", role)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("demo-admin-pw")); err != nil {
+		t.Fatalf("seeded admin hash does not verify: %v", err)
+	}
+}
+
 func TestStore_Balance_DerivedFromRows(t *testing.T) {
 	store := openMigrated(t)
 	ctx := context.Background()
 
-	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}); err != nil {
+	if err := store.CreateAccount(ctx, wallet.Account{ID: "member-1", Name: "Rina"}, ""); err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
 

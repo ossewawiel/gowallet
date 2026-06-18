@@ -34,7 +34,7 @@ type Deps struct {
 // /swagger) aren't in the spec's paths, so they're enforced here too.
 var publicPaths = map[string]bool{
 	"/healthz":      true,
-	"/token":        true,
+	"/login":        true,
 	"/openapi.yaml": true,
 	"/swagger":      true,
 }
@@ -73,7 +73,7 @@ func NewRouter(deps Deps) http.Handler {
 
 	// Auth runs first: it verifies the Bearer token and drops the identity into
 	// the context for every spec route EXCEPT the public opt-outs. We gate on
-	// the request path so /token + /healthz stay open while everything else is
+	// the request path so /login + /healthz stay open while everything else is
 	// protected by default — the same shape as the spec's global `security`.
 	if deps.JWTSecret != "" {
 		auth := Authenticator(deps.JWTSecret)

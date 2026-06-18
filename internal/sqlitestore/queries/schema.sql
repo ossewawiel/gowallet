@@ -2,9 +2,11 @@
 -- timestamped goose migrations in internal/sqlitestore/migrations/. Keep this
 -- mirrored with 20260618120000_s1_accounts_and_transactions.sql.
 CREATE TABLE accounts (
-    account_id TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    account_id    TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    password_hash TEXT,                                  -- nullable: no secret means the account can't log in
+    role          TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','admin')),
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 CREATE TABLE transactions (

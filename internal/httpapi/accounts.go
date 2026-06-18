@@ -22,7 +22,13 @@ func (s *server) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.wallet.CreateAccount(r.Context(), wallet.Account{ID: body.AccountId, Name: body.Name}); err != nil {
+	// Optional login secret. If omitted the account exists but can't log in.
+	// role is never read from the body — new accounts are always 'member'.
+	var secret string
+	if body.Secret != nil {
+		secret = *body.Secret
+	}
+	if err := s.wallet.CreateAccount(r.Context(), wallet.Account{ID: body.AccountId, Name: body.Name}, secret); err != nil {
 		writeDomainError(w, r, err)
 		return
 	}

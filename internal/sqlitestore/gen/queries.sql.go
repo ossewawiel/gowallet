@@ -73,16 +73,19 @@ func (q *Queries) BalanceForAccount(ctx context.Context, accountID string) (int6
 }
 
 const createAccount = `-- name: CreateAccount :exec
-INSERT INTO accounts (account_id, name) VALUES (?, ?)
+INSERT INTO accounts (account_id, name, password_hash) VALUES (?, ?, ?)
 `
 
 type CreateAccountParams struct {
-	AccountID string
-	Name      string
+	AccountID    string
+	Name         string
+	PasswordHash sql.NullString
 }
 
+// extended: now also stores the optional password_hash. role is deliberately
+// NOT in the column list, so it always takes the table default 'member'.
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) error {
-	_, err := q.db.ExecContext(ctx, createAccount, arg.AccountID, arg.Name)
+	_, err := q.db.ExecContext(ctx, createAccount, arg.AccountID, arg.Name, arg.PasswordHash)
 	return err
 }
 
@@ -90,10 +93,34 @@ const getAccount = `-- name: GetAccount :one
 SELECT account_id, name, created_at FROM accounts WHERE account_id = ?
 `
 
-func (q *Queries) GetAccount(ctx context.Context, accountID string) (Account, error) {
+type GetAccountRow struct {
+	AccountID string
+	Name      string
+	CreatedAt string
+}
+
+func (q *Queries) GetAccount(ctx context.Context, accountID string) (GetAccountRow, error) {
 	row := q.db.QueryRowContext(ctx, getAccount, accountID)
-	var i Account
+	var i GetAccountRow
 	err := row.Scan(&i.AccountID, &i.Name, &i.CreatedAt)
+	return i, err
+}
+
+const getAccountCredential = `-- name: GetAccountCredential :one
+SELECT password_hash, role FROM accounts WHERE account_id = ?
+`
+
+type GetAccountCredentialRow struct {
+	PasswordHash sql.NullString
+	Role         string
+}
+
+// password_hash is nullable, so sqlc returns sql.NullString. A NULL (or absent
+// account) is treated by the service as an invalid credential (no enumeration).
+func (q *Queries) GetAccountCredential(ctx context.Context, accountID string) (GetAccountCredentialRow, error) {
+	row := q.db.QueryRowContext(ctx, getAccountCredential, accountID)
+	var i GetAccountCredentialRow
+	err := row.Scan(&i.PasswordHash, &i.Role)
 	return i, err
 }
 

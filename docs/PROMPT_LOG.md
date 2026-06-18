@@ -797,4 +797,41 @@ the walking skeleton, via `/design-slice`).
   shipped code.
 - 🔗 **Artifacts:** .githooks/pre-push · .githooks/README.md · .gitattributes · CLAUDE.md.
 
+### ⏱️ 2026-06-19 · Entry 28 — S6 built (Login: credential-based token issuance, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 10` — build **S6** (Login) end-to-end with strict spec-first TDD
+  (red → green → refactor → prove).
+- 🤖 **Did — spec-first RED → GREEN → REFACTOR → PROVE on branch `slice/s6-login`:**
+  - **Spec-first:** added `POST /login` + `LoginRequest` to `api/openapi.yaml`; **removed** the
+    `POST /token` path **and** the `TokenRequest` schema (kept `TokenResponse` — `/login` returns the
+    same shape); regenerated via `oapi-codegen`.
+  - **Data:** timestamped migration
+    `20260619090000_s6_account_credentials.sql` — added `password_hash` + `role` columns to
+    `accounts`, seeded `member-123` (member) and `admin-001` (admin) with **bcrypt cost-12** hashes.
+  - **Domain:** new `wallet.Login` + `wallet.ErrInvalidCredentials` sentinel; `CreateAccount` now
+    bcrypt-hashes an optional secret. New sqlc `GetAccountCredential` query.
+  - **Transport:** new `internal/httpapi/login.go`; `publicPaths` swapped `/token` → `/login`. The S3
+    acceptance `mintToken` helper rewritten to mint **in-process** via `httpapi.IssueToken` (no HTTP
+    mint). The `CLAUDE.md` Schemathesis recipe now logs in via the seeded `admin-001` creds.
+- 🐛 **Two notable finds during the build (each fixed + locked by a test):**
+  - **(a) Schemathesis caught a `500` on `POST /accounts`** when a generated `secret` blew past
+    **bcrypt's 72-byte limit** — `bcrypt.ErrPasswordTooLong` was leaking out as an internal error.
+    Fixed: `wallet.CreateAccount` now maps it to `ErrInvalidInput` → **400**, pinned by
+    `TestCreateAccount_SecretTooLong_InvalidInput`. 💡 An over-long secret is bad *input*, not a
+    server fault — the edge owns the rejection.
+  - **(b) `sqlc` v1.31.1 miscounts byte-vs-rune offsets** when a SQL comment carries a multibyte char
+    — a stray `→` in `queries.sql` made it **silently truncate every generated query** and inject
+    stray `?;`, breaking *all* store tests with "SQL logic error". Fix + **standing rule:** keep
+    `queries.sql` / `schema.sql` comments **ASCII-only**. 💡 A nasty silent-corruption trap — the
+    generated code compiled, it just ran wrong SQL.
+- ✅ **Gate green:** gofmt ✓ · go vet ✓ · golangci-lint **0 issues** ✓ · `go build ./...` ✓ ·
+  `go test -race ./...` ✓ (no races) · Schemathesis **6303 cases / 0 failures** (admin token minted
+  via `/login`). **INV-14..17 proven.**
+- 💡 **Why it matters:** auth moves from "trust the request" to "trust the store" — the issued `role`
+  now comes from the stored account, identical 401s + bcrypt-only storage kill enumeration and
+  plaintext leakage. The credential-free `/token` mint is gone for good.
+- 🔗 **Artifacts:** issue **#10** · branch `slice/s6-login` · migration
+  `internal/sqlitestore/migrations/20260619090000_s6_account_credentials.sql` · new files
+  `internal/httpapi/login.go`, `internal/wallet/login_test.go`, `test/acceptance/s6_login_test.go`.
+
 <!-- New entries go below this line -->
