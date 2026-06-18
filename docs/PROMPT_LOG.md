@@ -483,4 +483,41 @@ the walking skeleton, via `/design-slice`).
 - 🔗 **Artifacts:** docs/slices/S6.md · GitHub issue #10 · docs/ACCEPTANCE.md (INV-14–17) ·
   docs/SLICES.md · docs/slices/README.md · README.md (Test credentials).
 
+### ⏱️ 2026-06-18 · Entry 18 — S2 built (Spend + no-negative guard, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 3` — build **S2** (spend + atomic no-negative guard) end-to-end
+  with strict spec-first TDD.
+- 🔎 **Explored / decisions in-build:**
+  - **Reuse over add (zero schema change):** S1's rails already cover spend — `CHECK(kind IN
+    ('earn','spend'))`, `UNIQUE(ref)`, and `BalanceForAccount` computing `Σearn − Σspend`. So S2
+    adds **no new migration and no new `sqlc` query**. ❌ Rejected: a fresh migration/query — the
+    issue explicitly flagged that as a smell.
+  - **The guard design — collapse check-and-write into one tx:** inside the existing single `sql.Tx`
+    in `sqlitestore.RecordTransaction`, insert first → if `affected == 1 && kind == spend`, recompute
+    `BalanceForAccount` **in-tx** (it now includes the just-inserted spend) → `tx.Rollback()` if `< 0`,
+    else commit. No read-then-write gap two racers could slip through.
+- 🤖 **Did:** Branched `slice/s2-spend`. Widened the `kind` enum to `[earn, spend]` and added a
+  **409** response to `createTransaction` in `api/openapi.yaml`; regenerated types via `oapi-codegen`
+  (→ `NewTransactionKindSpend`). Added `wallet.ErrInsufficientBalance` sentinel + a `RecordSpend`
+  service method (mirrors `RecordEarn`). Implemented the in-tx post-insert-then-check-and-rollback
+  guard in `sqlitestore.RecordTransaction`. Mapped the error to **409 `insufficient_balance`** in
+  `httpapi/errors.go`; added earn/spend routing in the `CreateTransaction` handler.
+- ✅ **Accepted:** all of it — quality gate **green** (gofmt · go vet · golangci-lint **0 issues** ·
+  go build · `go test -race ./...` · Schemathesis **269/269** on the spend+409 surface).
+  **INV-3/INV-4 proven.**
+- 💡 **Why the guard holds:** the single writer (`SetMaxOpenConns(1)`) serialises racing spends, so
+  each sees every committed prior spend — two concurrent spends can't both pass a stale read.
+  **INV-4 by construction**, not by hope. Keeping check + write SQL-level inside one tx is the
+  money-rules golden rule.
+- 🧪 **Proven:** **10 new tests** — 3 domain unit · 3 store integration · 4 acceptance (incl. the
+  **16-concurrent-spend `-race`** test), landed in `test/acceptance/s2_spend_test.go` + package files.
+- ⚠️ **Note:** the pre-existing `POST /token` **422** (semantic role validation, see Entry 15) is a
+  documented non-issue — unrelated to S2.
+- 📚 GitHub issue #3 (design) · `docs/specifications.pdf` ("Do not allow a spend that would drive the
+  balance below zero") · `docs/ACCEPTANCE.md` INV-3/INV-4 · S1's `RecordTransaction` seam.
+- 🔗 **Artifacts:** branch `slice/s2-spend` (built, not yet PR'd/merged) · issue #3 · files —
+  `api/openapi.yaml`, `internal/httpapi/gen/types_server.gen.go`, `internal/wallet/wallet.go`,
+  `internal/sqlitestore/accounts.go`, `internal/httpapi/errors.go`, `internal/httpapi/accounts.go`,
+  new `test/acceptance/s2_spend_test.go`. Closes #3 once the PR merges.
+
 <!-- New entries go below this line -->

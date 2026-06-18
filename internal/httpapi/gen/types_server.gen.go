@@ -57,13 +57,16 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for NewTransactionKind.
 const (
-	NewTransactionKindEarn NewTransactionKind = "earn"
+	NewTransactionKindEarn  NewTransactionKind = "earn"
+	NewTransactionKindSpend NewTransactionKind = "spend"
 )
 
 // Valid indicates whether the value is a known member of the NewTransactionKind enum.
 func (e NewTransactionKind) Valid() bool {
 	switch e {
 	case NewTransactionKindEarn:
+		return true
+	case NewTransactionKindSpend:
 		return true
 	default:
 		return false
@@ -150,14 +153,14 @@ type NewAccount struct {
 type NewTransaction struct {
 	AccountId string `json:"account_id"`
 
-	// Kind S1 = earn only; S2 widens to [earn, spend]
+	// Kind earn adds points; spend subtracts (rejected if it would go below zero)
 	Kind       NewTransactionKind `json:"kind"`
 	OccurredAt time.Time          `json:"occurred_at"`
 	Points     int64              `json:"points"`
 	Ref        string             `json:"ref"`
 }
 
-// NewTransactionKind S1 = earn only; S2 widens to [earn, spend]
+// NewTransactionKind earn adds points; spend subtracts (rejected if it would go below zero)
 type NewTransactionKind string
 
 // TokenRequest defines model for TokenRequest.
@@ -954,6 +957,20 @@ func (response CreateTransaction404JSONResponse) VisitCreateTransactionResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTransaction409JSONResponse Error
+
+func (response CreateTransaction409JSONResponse) VisitCreateTransactionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

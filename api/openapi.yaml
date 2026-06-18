@@ -149,6 +149,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: account_id does not exist., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409':
+          description: Spend rejected — would drive the balance below zero.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
 components:
   responses:
@@ -214,7 +219,7 @@ components:
       properties:
         ref:         { type: string, minLength: 1, maxLength: 64, example: tx-001 }
         account_id:  { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$', example: member-123 }
-        kind:        { type: string, enum: [earn], description: "S1 = earn only; S2 widens to [earn, spend]" }
+        kind:        { type: string, enum: [earn, spend], description: "earn adds points; spend subtracts (rejected if it would go below zero)" }
         points:      { type: integer, format: int64, minimum: 1, maximum: 9223372036854775807, example: 150 }
         occurred_at: { type: string, format: date-time, example: "2024-06-01T10:00:00Z" }
     Transaction:

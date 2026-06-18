@@ -103,6 +103,28 @@ func (s *Store) RecordTransaction(ctx context.Context, t wallet.Transaction) (wa
 		return wallet.Transaction{}, false, fmt.Errorf("rows affected: %w", err)
 	}
 
+	// No-negative guard, baked into the SAME tx (INV-3/INV-4). On a FRESH spend
+	// insert (affected==1, kind==spend) the just-inserted row is already counted
+	// by BalanceForAccount; if that drives the balance below zero we roll back
+	// (undoing the insert) and report ErrInsufficientBalance — nothing persists.
+	// A replay (affected==0) skips the check: the first write already validated
+	// it (first-write-wins), so re-checking would be wrong and a wasted read.
+	// Earn can't go negative, so it skips the check too. The single writer
+	// serialises racing spends, so each sees every committed spend before it —
+	// two concurrent spends can't both pass a stale read.
+	if affected == 1 && t.Kind == wallet.KindSpend {
+		bal, balErr := q.BalanceForAccount(ctx, t.AccountID)
+		if balErr != nil {
+			return wallet.Transaction{}, false, fmt.Errorf("balance check: %w", balErr)
+		}
+		if bal < 0 {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				return wallet.Transaction{}, false, fmt.Errorf("rollback spend: %w", rbErr)
+			}
+			return wallet.Transaction{}, false, wallet.ErrInsufficientBalance
+		}
+	}
+
 	// Read the stored row inside the same tx — for a fresh insert it's our row;
 	// for a replay it's the first writer's row (first-write-wins).
 	row, err := q.GetTransactionByRef(ctx, t.Ref)

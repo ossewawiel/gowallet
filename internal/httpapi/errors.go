@@ -23,6 +23,8 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, "not_found", "resource not found")
 	case errors.Is(err, wallet.ErrAccountExists):
 		writeError(w, r, http.StatusConflict, "account_exists", "account_id already exists")
+	case errors.Is(err, wallet.ErrInsufficientBalance):
+		writeError(w, r, http.StatusConflict, "insufficient_balance", "spend would drive balance below zero")
 	case errors.Is(err, wallet.ErrInvalidInput):
 		writeError(w, r, http.StatusBadRequest, "invalid_input", "request body is invalid")
 	default:

@@ -87,10 +87,10 @@ func (s *server) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_input", "ref, account_id, points (>=1) and occurred_at are required")
 		return
 	}
-	// S1 accepts earn only; the spec enum already documents this. Reject the
-	// rest at the edge (S2 widens the enum + this guard).
-	if body.Kind != "earn" {
-		writeError(w, r, http.StatusBadRequest, "invalid_kind", "kind must be 'earn' in this version")
+	// earn and spend are the only legal directions (S2 widened the enum).
+	// kind selects the service method; anything else dies at the edge as 400.
+	if body.Kind != "earn" && body.Kind != "spend" {
+		writeError(w, r, http.StatusBadRequest, "invalid_kind", "kind must be 'earn' or 'spend'")
 		return
 	}
 
@@ -99,12 +99,22 @@ func (s *server) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, r, err)
 		return
 	}
-	stored, created, err := s.wallet.RecordEarn(r.Context(), wallet.Transaction{
+	txn := wallet.Transaction{
 		Ref:        body.Ref,
 		AccountID:  id,
 		Points:     body.Points,
 		OccurredAt: body.OccurredAt,
-	})
+	}
+	var (
+		stored  wallet.Transaction
+		created bool
+	)
+	switch body.Kind {
+	case "earn":
+		stored, created, err = s.wallet.RecordEarn(r.Context(), txn)
+	case "spend":
+		stored, created, err = s.wallet.RecordSpend(r.Context(), txn)
+	}
 	if err != nil {
 		if errors.Is(err, wallet.ErrNotFound) {
 			writeError(w, r, http.StatusNotFound, "account_not_found", "account_id does not exist")
