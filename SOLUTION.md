@@ -1,77 +1,207 @@
 # 🧩 SOLUTION.md — Design, Trade-offs & AI Workflow
 
-This document explains **why gowallet is built the way it is**, in plain language, and shows
-**how AI was used** during the build (a requirement of the brief). It grows alongside the code.
+Plain-language tour of **why gowallet is built the way it is**, what's actually shipped, the
+trade-offs we made, and **how AI was used** (a requirement of the brief). The blow-by-blow timeline
+lives in [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md) — this is the curated summary.
 
 ---
 
-## 1. Approach in one paragraph
+## 1. What it is, in one paragraph
 
-gowallet is a loyalty **points wallet**: accounts earn and spend points, and the service must
-keep balances correct even when the same transaction is submitted twice or many requests land at
-once. The guiding principle is **boring correctness over clever code** — a clear data model, a
-single source of truth for balances, idempotent writes keyed on the transaction `ref`, and a
-database that survives restarts. It's deliberately built in stages (plumbing → dev system →
-design & build) so the reasoning is visible, not just the final artifact.
-
----
-
-## 2. Key decisions so far
-
-Each decision below was made after weighing alternatives. The full reasoning and sources are in
-[`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md).
-
-| # | Decision | Alternatives considered | Why we chose it |
-|---|----------|-------------------------|-----------------|
-| D1 | **SQLite** as the relational DB | PostgreSQL, MariaDB | Brief recommends it; zero external services; perfect for a locally-runnable take-home. Data layer kept swappable for a future Postgres move. |
-| D2 | **`modernc.org/sqlite`** (pure-Go driver) | `mattn/go-sqlite3` (CGO) | No C compiler needed → reviewers can `git clone && go run` on any machine. Accepts a write-speed trade-off that's irrelevant at this scale. |
-| D3 | **Persist to a single `.db` file** | In-memory, server DB | Meets "durable across restarts" with the least moving parts. |
-| D4 | **Public GitHub repo** | Private + invite | Simplest to share/review for the assignment. |
-| D5 | **OpenAPI 3 + Swagger UI** | Hand-written docs, Postman collection | Living, testable API docs; reviewers can click-to-call endpoints. |
-| D6 | **Strict TDD** + Playwright for end-to-end | Test-after | Correctness is the whole point of a wallet; tests are the spec. |
-| D7 | **Docker** for portable runs | Local-only | "Runs anywhere" without requiring a Go install on the reviewer's box. |
-| D8 | **stdlib `net/http` (1.22) + `chi`** | gin / echo / fiber | Stdlib now does method routing; chi adds middleware + sub-routers without framework lock-in. Idiomatic, minimal deps. |
-| D9 | **Spec-first `oapi-codegen`** (strict-server) + `kin-openapi` | code-first (Huma/swaggo), hand-rolled | `api/openapi.yaml` is the single source of truth *and* the TDD target; codegen keeps code and spec in lockstep. |
-| D10 | **`sqlc`** + **`goose`** (timestamped) | GORM, sqlx | Type-safe SQL, zero runtime reflection; timestamped migrations survive parallel branches. |
-| D11 | **JWT HS256** (`golang-jwt`, method-pinned) | opaque tokens, PASETO, RS256 | Single service signs + verifies → symmetric is correct; `WithValidMethods` kills alg-confusion. `role`+`sub` claims for member/admin. |
-| D12 | **Schemathesis** (contract) + Go **`-race`** (invariants) | Playwright on contract, Dredd | Two-layer source of truth: spec-fuzz for shapes, race tests for business rules + concurrency. |
-| D13 | **Issue-driven vertical slices**, 3 streams, auth midstream | one-shot build | Each GitHub issue fully specs a slice so a fresh agent session builds with no re-design. |
-
-> ✅ **Resolved in Step 2** (these were "open"): router = stdlib + chi, auth = JWT HS256, concurrency
-> = WAL + `busy_timeout` + single-writer + `UNIQUE(ref)`. **Step 3 is execution** — building the
-> slices in `docs/SLICES.md` via the issue-driven TDD flow (`docs/DEVELOPMENT_FLOW.md`).
+gowallet is a loyalty **points wallet**: members earn and spend points, and the service keeps
+balances correct even when the same transaction is submitted twice or many requests land at once.
+The guiding principle is **boring correctness over clever code** — a clear data model, balances
+derived from an append-only transaction log, idempotent writes keyed on the transaction `ref`, and
+SQL-level guards that can't be torn apart by concurrency. It was built in deliberate stages
+(plumbing → dev system → issue-driven slices) so the *reasoning* is visible, not just the artifact.
 
 ---
 
-## 3. Correctness model (the part that matters)
+## 2. Where it stands (built vs planned)
 
-The brief's hard constraints and how the design will satisfy them:
+| Slice | Capability | State |
+|------|------------|:-----:|
+| **S0** | Walking skeleton — `/healthz`, DB PRAGMAs, goose runner, Swagger UI, 3-package wiring | ✅ built |
+| **S1** | Accounts + earn + balance — `POST /accounts`, `GET /accounts/{id}`, `POST /transactions` (earn), `GET …/balance` | ✅ built |
+| **S2** | Spend + atomic no-negative guard | ✅ built |
+| **S3** | Auth — JWT HS256 verify middleware + member/admin access rule | ✅ built |
+| **S4** | Audit trail (+ admin `GET /audit`) | 📋 specced (issue #5) |
+| **S5** | CSV batch ingestion + summary | 📋 specced (issue #6) |
+| **S6** | Login — credential-based token issuance | 📋 specced (issue #10) |
+| **S7** | Listings — `GET /accounts`, `GET /accounts/{id}/transactions` | 📋 specced (issue #13) |
 
-| Constraint | Strategy (to be implemented in Step 3) |
-|------------|----------------------------------------|
-| No double-counting the same `ref` | `UNIQUE` constraint on transaction `ref`; inserts are idempotent. |
-| No spend below zero | Balance check **inside** the same transaction that writes the spend. |
-| Safe under overlapping requests | SQLite **WAL** + `busy_timeout`; serialise writes; atomic transactions. |
-| Durable across restarts | On-disk SQLite file; `synchronous=NORMAL` with WAL. |
-
----
-
-## 4. 🤖 AI workflow — what was asked, accepted, edited, and why
-
-The brief asks for a short, honest account of how AI was used. The **full timeline** is in
-[`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); this is the summary.
-
-- **How I used it:** as an *interrogator and pair-engineer*, not an autocomplete. Before any
-  setup, the assistant pushed back with hard questions (driver choice, repo visibility, install
-  method, testing posture) and cited primary sources (go.dev, sqlite.org) so decisions were made
-  on evidence, not vibes.
-- **What I accepted:** the pure-Go SQLite driver recommendation (portability win), the
-  WAL + `busy_timeout` concurrency guidance, and the staged plumbing → dev → design plan.
-- **What I steered/edited:** chose a **public** repo, opted to **over-deliver** (OpenAPI/Swagger,
-  Playwright, Docker) beyond the minimal brief, and insisted on **strict TDD** throughout.
-- **Why this way:** a wallet is a correctness-critical domain; making the assistant justify each
-  choice against sources produces a defensible design and a clean paper trail.
+The earn + spend + auth **core is complete and green**; the remaining slices are fully designed in
+[`docs/slices/`](docs/slices/) with GitHub issues ready to build.
 
 ---
 
-_This file is a living document — sections fill in as Steps 2 and 3 land._
+## 3. Architecture (three packages, one-way deps)
+
+A light hexagonal layout so the business rules never touch HTTP or SQL — which is what makes the
+"swap SQLite for Postgres later" promise real. Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+```
+httpapi  ──▶  wallet  ◀──  sqlitestore
+(transport)   (THE CORE)   (persistence)
+```
+
+- **`internal/wallet`** — domain types, balance + idempotency rules, services, the `Authorize`
+  access rule, sentinel errors. Imports nothing internal; unit-testable with no DB.
+- **`internal/sqlitestore`** — sqlc-generated queries, goose migrations, DB open + PRAGMAs.
+  Implements `wallet`'s repository interfaces.
+- **`internal/httpapi`** — oapi-codegen handlers, JWT middleware, the router, the error envelope.
+- **`cmd/gowallet/main.go`** — the one place that wires all three together.
+
+Auth and CSV are *not* their own packages — auth is `httpapi` middleware, CSV is an `httpapi`
+handler calling `wallet`. Three packages, full stop.
+
+---
+
+## 4. The API & data model (as built)
+
+**Endpoints live today** (`api/openapi.yaml` is the source of truth; `/swagger` serves it):
+
+| Method + path | Does | Auth |
+|---------------|------|------|
+| `GET /healthz` | liveness + real DB ping | public |
+| `POST /token` | mint a demo HS256 JWT for `{account_id, role}` | public |
+| `POST /accounts` | create a member account | Bearer |
+| `GET /accounts/{id}` | read one account | Bearer (own/admin) |
+| `GET /accounts/{id}/balance` | current balance | Bearer (own/admin) |
+| `POST /transactions` | record earn **or** spend (idempotent on `ref`) | Bearer (own/admin) |
+
+**Data model** (two tables; balances are *derived*, never stored):
+
+```sql
+accounts(account_id PK, name, created_at)
+transactions(id PK, ref UNIQUE, account_id FK→accounts, kind CHECK(earn|spend),
+             points CHECK(>0), occurred_at, created_at)   -- index on account_id
+```
+
+The whole stack is real and current: `chi v5.3`, `kin-openapi v0.140`, `oapi-codegen` runtime,
+`golang-jwt/jwt v5.3`, `goose v3.27`, `modernc.org/sqlite v1.52` — all pinned in `go.mod`.
+
+---
+
+## 5. Key decisions & trade-offs
+
+The full reasoning + primary sources are in [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md).
+
+| # | Decision | Alternatives | Why |
+|---|----------|--------------|-----|
+| D1 | **SQLite** | PostgreSQL, MariaDB | brief-recommended; zero external services; data layer kept swappable |
+| D2 | **`modernc.org/sqlite`** (pure Go) | `mattn/go-sqlite3` (CGO) | no C compiler → `git clone && go run` anywhere; minor write-speed cost is irrelevant here |
+| D3 | **Single on-disk `.db`** | in-memory, server DB | "durable across restarts" with the fewest moving parts |
+| D4 | **Public repo** | private + invite | simplest to share/review |
+| D5 | **Spec-first OpenAPI + `oapi-codegen`** + `kin-openapi` | code-first (Huma/swaggo), hand-rolled | `openapi.yaml` is the single source of truth **and** the TDD target |
+| D6 | **stdlib `net/http` (1.22) + `chi`** | gin / echo / fiber | stdlib does method routing; chi adds middleware without framework lock-in |
+| D7 | **`sqlc`** + **`goose`** (timestamped) | GORM, sqlx | type-safe SQL, zero reflection; timestamped migrations survive parallel branches |
+| D8 | **JWT HS256**, method-pinned | opaque, PASETO, RS256 | single service signs **and** verifies → symmetric is right; `WithValidMethods` kills alg-confusion |
+| D9 | **Schemathesis + Go `-race`** | Playwright, Dredd | two-layer source of truth: spec-fuzz for shapes, race tests for business rules + concurrency |
+| D10 | **Derived balance** (`Σearn − Σspend`) | stored running-balance column | no dual-write; "balance persists across restart" falls out for free |
+| D11 | **Strict TDD**, issue-driven vertical slices, 3 streams | one-shot build, test-after | correctness is the whole point; each issue fully specs a slice so a fresh session builds with no re-design |
+| D12 | **Docker** for portable runs | local-only | runs anywhere without a local Go install |
+| D13 | **Thin credential login** (S6) over a full IdP | demo-mint only / full user mgmt | answers "how do you log in?" + shows authn-vs-authz, without scope creep |
+
+> ✏️ Course corrections worth flagging: we **dropped Playwright** (Schemathesis owns the contract
+> path); **flattened** a 5-package layout to 3 (the Go team favours simpler); **collapsed** accounts
+> + earn into one slice; and **baked concurrency tests into** S1/S2 rather than a separate hardening
+> slice. Each is logged with its reason in the prompt log.
+
+---
+
+## 6. Correctness model (the part that matters — and how it's actually done)
+
+| Constraint (brief) | How it's implemented |
+|--------------------|----------------------|
+| **No double-counting a `ref`** | `UNIQUE(ref)` + `INSERT … ON CONFLICT(ref) DO NOTHING` inside one `sql.Tx`. `RowsAffected == 1` → created (**201**); `== 0` → idempotent replay returns the stored txn (**200**). |
+| **No spend below zero** | Within the **same tx**: insert the spend, then recompute the balance (which now *includes* it) and **roll back** if it came out `< 0` → **409**. The check and the write can't be separated. |
+| **Safe under overlapping requests** | The write path pins **`SetMaxOpenConns(1)`** (single writer) + **WAL** + `busy_timeout=5000`, so racing spends each see every committed prior spend. Concurrency holds *by construction*, not by hope. |
+| **Durable across restarts** | On-disk SQLite, `journal_mode=WAL`, `synchronous=NORMAL`. Balance is a `SUM` over surviving rows. |
+| **No wire-crossing** | Only the `*sql.DB` pool + config are shared; identity rides in `r.Context()` from the **verified token only**. Proven by an N-user `-race` isolation test. |
+
+Every row above is backed by a test in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — the invariant
+registry. **INV-1–8, 12, 13 are proven (green under `-race`)**; INV-9–11, 14–22 are registered for
+the not-yet-built slices.
+
+---
+
+## 7. Security model
+
+- **Verification:** Bearer JWT, **HS256**, algorithm **pinned** (`jwt.WithValidMethods(["HS256"])`)
+  → defeats the `alg:none` and RS↔HS confusion attacks. Claims: `sub` (account_id) + `role`.
+- **Authorization:** a **pure function** `wallet.Authorize(identity, target)` — `member` may only
+  touch their own account (else **403**), `admin` may touch any. Identity comes from the token via
+  context, **never** the URL/body.
+- **Spec default-deny:** `openapi.yaml` sets a global `security: [bearerAuth]`; public routes opt out
+  explicitly. So any new endpoint is **protected by default**.
+- **Config:** `GOWALLET_JWT_SECRET` is required and the server **fails fast at boot** if it's missing.
+
+> ⚠️ **Honest caveat:** today `POST /token` is a *demo mint* — it issues a token without checking a
+> credential (in-spec: the brief leaves issuance to us). **S6 (login)** replaces it with a real
+> `POST /login` that verifies a bcrypt-hashed secret; its seeded demo credentials are published in
+> the README purely for testing and flagged as a temporary stop-gap.
+
+---
+
+## 8. Testing strategy
+
+Two layers, because no single tool covers all of it:
+
+1. **Contract (Schemathesis):** property-based + stateful fuzzing straight from `openapi.yaml` —
+   catches shape violations, bad status codes, and sequence bugs. (S1 ran **3903 cases / 0 issues**.)
+2. **Invariants (Go `testing` + `-race`):** the business rules + concurrency the spec can't express —
+   idempotency, no-negative, isolation. Run with the race detector.
+
+Strict **red → green → refactor → prove** per slice; "done" = the full quality gate green (`gofmt`,
+`go vet`, `golangci-lint`, `go build`, `go test -race`, Schemathesis, the slice's ACCEPTANCE rows,
+and updated docs).
+
+> 🪟 One Windows wrinkle worth knowing: the pure-Go driver means normal builds are CGO-free, but
+> `go test -race` itself needs cgo + a real **MinGW gcc** — documented in `CLAUDE.md` so it isn't
+> rediscovered each time.
+
+---
+
+## 9. Trade-offs & what we'd do with more time
+
+- **Token issuance** is a demo mint until S6 lands; published test creds are a temporary grading aid.
+- **No pagination** on the planned listings (S7) — fine at demo scale; production wants limit/offset
+  or cursor paging.
+- **SQLite single-writer** is perfect here; higher write concurrency would mean the Postgres swap
+  (a driver + migration change, not a rewrite — that's why the layering exists).
+- **`int64` balance overflow** is flagged as a known edge (noted during the S3 build) to be handled
+  where it belongs.
+- **Audit (S4) + batch (S5)** are specced but not yet built.
+
+---
+
+## 10. 🤖 AI workflow — what was asked, accepted, edited, and why
+
+The brief asks for an honest account of how AI was used. Full per-decision timeline in
+[`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); here's the shape of it.
+
+**How AI was used — as an interrogator + pair-engineer, not an autocomplete.** Every phase started
+with a hard-questions pass (an "interrogation" that surfaced trade-offs and cited primary sources —
+go.dev, sqlite.org, the IETF idempotency draft, Russ Cox on Go layout) *before* any code. Then we
+built a small **factory**: house rules in `CLAUDE.md`, three skills, two subagents, four slash
+commands, and a GitHub **issue-per-slice** workflow — so design happens in a planning session, lands
+as a fully-specced issue, and a fresh session builds it red→green→refactor→prove with no re-design.
+
+- **✅ Accepted (AI recommendations taken):** pure-Go SQLite driver (portability); spec-first
+  `oapi-codegen`; `sqlc`; **JWT HS256 over RS256** (single service — no key split to justify);
+  WAL + `busy_timeout` + single-writer for concurrency; the two-layer Schemathesis + `-race` testing.
+- **✏️ Steered/edited (where I overrode or shaped it):** public repo; **over-deliver** scope
+  (OpenAPI/Swagger, Docker, CI); strict TDD always; a **casual, visual house voice** applied to all
+  docs; a **granular** prompt log; flattening to a **3-package** layout; collapsing accounts+earn;
+  adding the **thin login** (S6) and **listings** (S7) after spotting gaps.
+- **❌ Rejected (AI options declined, with reasons):** gin/echo/GORM (framework/ORM lock-in);
+  Playwright on the contract path (Schemathesis is better at it); the IETF `Idempotency-Key` header
+  (overkill — body `ref` is the key); a 5-package layout; full user-management (scope creep).
+- **💡 Why this way:** a wallet is correctness-critical. Forcing every choice to be justified against
+  sources — and capturing it as a timeline — produces a defensible design *and* a clean paper trail,
+  which is exactly what the brief grades.
+
+---
+
+_Living document — kept in step with the build (last synced after S2/S3 landed and S4–S7 were specced)._
