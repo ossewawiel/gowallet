@@ -1,6 +1,6 @@
 ---
 name: go-architecture
-description: gowallet's Go architecture and code conventions — clean layering (api→domain→store), project layout, the wire-crossing safety rule, SQLite/sqlc/goose patterns, and error design. Use when writing or reviewing Go code, structuring packages, designing the data layer, or making any change to handlers/domain/store.
+description: gowallet's Go architecture and code conventions — clean layering (httpapi→wallet←sqlitestore, 3 packages), project layout, the wire-crossing safety rule, SQLite/sqlc/goose patterns, and error design. Use when writing or reviewing Go code, structuring packages, designing the data layer, or making any change to handlers/wallet/store.
 ---
 
 # Go architecture & code conventions
@@ -9,8 +9,12 @@ You are working on **gowallet**. Before writing code, anchor on `docs/ARCHITECTU
 you haven't this session). Enforce these without exception:
 
 ## Layering (one direction only)
-- `api → domain → store`. **`domain` imports nothing upward** — it's pure Go, unit-testable with no DB.
-- `domain` defines repository **interfaces**; `store` implements them. `api` never imports `store`.
+- `httpapi → wallet ← sqlitestore` — both edges point AT `wallet`, which imports neither. `wallet` is
+  pure Go, unit-testable with no DB.
+- `wallet` defines repository **interfaces**; `sqlitestore` implements them. `httpapi` never imports
+  `sqlitestore`. `cmd/gowallet/main.go` wires all three.
+- **Only three** internal packages: `httpapi` (transport + JWT middleware + `/token` + CSV handler),
+  `wallet` (core rules + services + audit writer), `sqlitestore` (sqlc + goose + DB).
 - Generated code lives in `internal/*/gen/` and is **never hand-edited** (oapi-codegen, sqlc output).
 
 ## The wire-crossing rule (multi-user safety)

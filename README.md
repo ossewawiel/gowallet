@@ -19,15 +19,16 @@
 |------|------------------|:-----:|
 | **1 · Plumbing** | Go 1.26.4 + gh + gopls, public repo live, prompt timeline started | ✅ done |
 | **2 · Dev system** | CLAUDE.md, engineering docs, skills, subagents, commands, issue templates | ✅ done |
-| **3 · Design & build** | The actual wallet — slices S0→S7, spec-first + TDD | ⏳ up next |
+| **3 · Design & build** | The actual wallet — 6 slices S0→S5, spec-first + TDD | 🚧 in progress |
 
 **Where we are:**
 - ✅ **Step 1** — toolchain verified, `github.com/ossewawiel/gowallet` public & pushed.
 - ✅ **Step 2** — the development system: layered architecture, REST + error standards, issue-driven
   vertical-slice TDD workflow, two-layer testing (Schemathesis + Go `-race`), 3 skills, 2 subagents,
   4 commands, GitHub slice templates.
-- ⏳ **Step 3** — build the slices. **First up: `S0`** — the walking skeleton (health + DB +
-  migrations + Swagger UI).
+- 🚧 **Step 3** — backlog finalized (**6 slices, S0→S5**), kickoff prompts in
+  [`docs/slices/`](docs/slices/), and **6 GitHub issues opened** (#1–#6). Build starts at
+  **[S0 / #1](https://github.com/ossewawiel/gowallet/issues/1)** — the walking skeleton.
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

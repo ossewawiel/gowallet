@@ -14,25 +14,31 @@ rules don't know about HTTP or SQL**, so we can swap SQLite → Postgres later b
             HTTP request
                  │
                  ▼
-   ┌─────────────────────────┐
-   │  api/      (handlers)   │   ← oapi-codegen strict server, JWT middleware, JSON in/out
-   └───────────┬─────────────┘
-               │ calls (interfaces)
-               ▼
-   ┌─────────────────────────┐
-   │  domain/   (the rules)  │   ← Account, Transaction, invariants. Imports NOTHING upward.
-   └───────────┬─────────────┘
-               │ via repository interfaces
-               ▼
-   ┌─────────────────────────┐
-   │  store/    (SQLite)     │   ← sqlc-generated queries + goose migrations
-   └─────────────────────────┘
+   ┌────────────────────────────────┐
+   │ internal/httpapi  (transport)  │  ← oapi-codegen handlers, JWT middleware, router, JSON in/out
+   └───────────────┬────────────────┘
+                   │ calls services (interfaces defined in wallet)
+                   ▼
+   ┌────────────────────────────────┐
+   │ internal/wallet   (THE CORE)   │  ← Account, Transaction, balance + idempotency rules,
+   │  imports nothing internal      │     services, repository interfaces, sentinel errors
+   └───────────────▲────────────────┘
+                   │ implements wallet's repository interfaces
+   ┌───────────────┴────────────────┐
+   │ internal/sqlitestore (SQLite)  │  ← sqlc queries, goose migrations, DB open + PRAGMAs
+   └────────────────────────────────┘
 ```
 
-**Dependency rule (one direction only):** `api → domain → store`.
-- `domain` defines interfaces like `AccountRepository`; `store` implements them.
-- `api` depends on `domain`, never on `store` directly.
-- Result: `domain` is pure Go you can unit-test with zero database.
+**Dependency rule:** `httpapi → wallet ← sqlitestore`. Both edges point **at** `wallet`; `wallet`
+imports neither.
+- `wallet` defines interfaces like `AccountRepository`; `sqlitestore` implements them.
+- `httpapi` depends on `wallet` (calls its services), never on `sqlitestore` directly.
+- `cmd/gowallet/main.go` is the only place that wires all three together.
+- Result: `wallet` is pure Go you can unit-test with zero database.
+
+> 🧩 **Only three internal packages.** Auth (JWT) isn't its own package — it's `httpapi` middleware
+> plus a `/token` handler. CSV batch ingestion is an `httpapi` handler that calls `wallet` services.
+> The audit writer is a `wallet` service persisted by `sqlitestore`. Keep it at three.
 
 ---
 
@@ -40,24 +46,22 @@ rules don't know about HTTP or SQL**, so we can swap SQLite → Postgres later b
 
 ```
 gowallet/
-├── cmd/gowallet/main.go         # entrypoint: wire config → store → domain → api → serve
+├── cmd/gowallet/main.go         # entrypoint: wire config → sqlitestore → wallet → httpapi → serve
 ├── api/
 │   └── openapi.yaml             # 📜 SOURCE OF TRUTH for the contract (spec-first)
 ├── internal/
-│   ├── api/                     # HTTP layer
-│   │   ├── gen/                 # oapi-codegen OUTPUT (do not hand-edit)
-│   │   ├── handlers/            # strict-server interface implementations
-│   │   └── middleware/          # jwt auth, request-id, logging, recover
-│   ├── domain/                  # Account, Transaction, errors, invariants, repo interfaces
-│   ├── store/
-│   │   ├── gen/                 # sqlc OUTPUT (do not hand-edit)
-│   │   ├── queries/             # *.sql  → sqlc reads these
-│   │   ├── migrations/          # *.sql  → goose, TIMESTAMPED filenames
-│   │   └── sqlite.go            # DB open + PRAGMAs (WAL, busy_timeout)
-│   ├── auth/                    # JWT issue + verify
-│   └── csv/                     # batch ingestion + audit
+│   ├── httpapi/                 # TRANSPORT: handlers, middleware (jwt, request-id, recover), router,
+│   │   │                        #            the /token endpoint, the CSV batch handler
+│   │   └── gen/                 # oapi-codegen OUTPUT (do not hand-edit)
+│   ├── wallet/                  # THE CORE: Account, Transaction, balance/idempotency rules,
+│   │                            #           services, repo interfaces, sentinel errors, audit writer
+│   └── sqlitestore/             # PERSISTENCE: implements wallet's repo interfaces
+│       ├── gen/                 # sqlc OUTPUT (do not hand-edit)
+│       ├── queries/             # *.sql  → sqlc reads these
+│       ├── migrations/          # *.sql  → goose, TIMESTAMPED filenames
+│       └── sqlite.go            # DB open + PRAGMAs (WAL, busy_timeout)
 ├── test/
-│   ├── acceptance/              # Go tests proving docs/ACCEPTANCE.md invariants
+│   ├── acceptance/              # Go -race tests proving docs/ACCEPTANCE.md invariants
 │   └── schemathesis/            # schemathesis run config
 ├── docs/                        # you are here
 ├── .claude/                     # skills, commands, agents
@@ -111,6 +115,6 @@ the identity into the request context. Handlers read identity from context — n
 
 ## 🔄 Swap-ability (the "Postgres later" promise)
 
-Because `domain` talks to `store` through interfaces and `store` is the only place that knows SQL
-dialects, moving to Postgres is: new migrations, point sqlc at the `postgres` engine, swap the
-driver in `sqlite.go`. The handlers and rules don't change. That's the whole reason for the layering.
+Because `wallet` talks to `sqlitestore` through interfaces and `sqlitestore` is the only place that
+knows SQL dialects, moving to Postgres is: new migrations, point sqlc at the `postgres` engine, swap
+the driver in `sqlite.go`. The handlers and rules don't change. That's the whole reason for the layering.

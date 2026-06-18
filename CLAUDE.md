@@ -59,7 +59,8 @@ comments where it helps. If it's prose a human reads, it follows this voice.
    transaction as the write; never let a spend go negative.
 5. **Vertical slices.** A slice = one full REST cycle (handler → service → store → migration →
    spec → tests), shippable on its own. Not one function at a time. See `docs/SLICES.md`.
-6. **Layering is one-directional:** `api → domain → store`. `domain` imports nothing upward.
+6. **Layering:** `httpapi → wallet ← sqlitestore` — both edges point at `wallet`, which imports
+   neither. **Three** internal packages, no more (auth = `httpapi` middleware; CSV = `httpapi` handler).
 
 ---
 

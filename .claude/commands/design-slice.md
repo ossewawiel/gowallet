@@ -20,10 +20,15 @@ We're **designing a vertical slice** for gowallet. This is design-only — **no 
    - **Invariants** — assign `INV-n` IDs; these become rows in `docs/ACCEPTANCE.md` and the issue.
    - The **red-test list** — the exact failing tests to write first (unit + acceptance).
    - **Acceptance criteria**, **depends-on**, and **stream** (A/B/C from SLICES.md).
-4. **Open the issue** — fill the slice template and create it:
-   `gh issue create --title "<id>: <name>" --label slice --body-file <tmp>` (use the fields from
-   `.github/ISSUE_TEMPLATE/slice.yml`). The issue must be complete enough that a fresh session can
-   build it with **zero further design questions**.
+4. **Open or enrich the issue** — first check whether a slice issue already exists
+   (`gh issue list --label slice --search "<id>:"`):
+   - **If it exists** (S0–S5 were pre-created at Step-3 kickoff): **enrich it, don't duplicate** —
+     `gh issue edit <n> --body-file <tmp>` to add the full design (OpenAPI fragment, migration,
+     red-test list) on top of the existing kickoff prompt.
+   - **If not:** create it — `gh issue create --title "<id>: <name>" --label slice --body-file <tmp>`
+     using the fields from `.github/ISSUE_TEMPLATE/slice.yml`.
+   Either way the issue must be complete enough that a fresh session builds it with **zero further
+   design questions**.
 5. **Register invariants** — dispatch the `doc-updater` subagent to add the new `INV-n` rows to
    `docs/ACCEPTANCE.md` (status ⬜) and log a PROMPT_LOG entry.
 

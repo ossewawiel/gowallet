@@ -140,4 +140,37 @@ the walking skeleton, via `/design-slice`).
   digging through the prompt log.
 - 🔗 **Artifacts:** README.md · CLAUDE.md · .claude/agents/doc-updater.md
 
+## Step 3 — Execution
+
+### ⏱️ 2026-06-18 · Entry 08 — Slice catalogue finalized (8 → 6)
+
+- 🧑 **Asked:** Split Step 3 into slices, generate a kickoff prompt per slice for fresh sessions, and
+  lay out an order that hits parallelism ASAP.
+- 🔎 **Explored:** Re-read the brief and pressure-tested the Step-2 `SLICES.md` against primary
+  sources — Cockburn's walking skeleton, the IETF idempotency-key draft, Russ Cox on Go layout.
+- ✅ **Accepted:** keep S0 a pure walking skeleton · bake concurrency into S1/S2 (no separate
+  hardening slice) · keep audit its own slice for parallelism · `ref` IS the idempotency key (body,
+  `UNIQUE`).
+- ✏️ **Edited:** collapsed accounts+earn into one slice (S1) · flattened the 5-package `internal/` to
+  **3 packages** (`httpapi → wallet ← sqlitestore`) · auth (S3) runs parallel from right after S0.
+- ❌ **Rejected:** layering an IETF `Idempotency-Key` header on top of `ref` (overkill for the brief);
+  the 5-package layout (Go team favours simpler).
+- 💡 **Why:** fewer, honest slices; only S0 is truly serial; a reviewer reads a 3-package tree in minutes.
+- 📚 [Cockburn](https://yoshi389111.github.io/kinokobooks/soft_en/Start_with_a_Walking_Skeleton.htm) ·
+  [IETF idempotency draft-07](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-07) ·
+  [Russ Cox on layout](https://github.com/golang-standards/project-layout/issues/117)
+- 🔗 **Artifacts:** docs/SLICES.md · docs/ARCHITECTURE.md · docs/ACCEPTANCE.md
+
+### ⏱️ 2026-06-18 · Entry 09 — Slice prompts + GitHub issues created
+
+- 🤖 **Did:** Wrote 6 medium kickoff prompts (`docs/slices/S0–S5.md`) + a run-order guide
+  (`docs/slices/README.md`); created the `slice` + `stream-a/b/c` labels and **opened 6 issues
+  (#1–#6)** straight from the prompt files; remapped the ACCEPTANCE invariants to the new slice IDs;
+  taught `/design-slice` to enrich an existing issue instead of opening a duplicate.
+- ✅ **Accepted:** one file per slice + a master order doc; medium-rich prompts (intent + invariants +
+  traps + deps), not full pre-designs.
+- 💡 **Why:** each issue is a fresh-session entry point — paste prompt → `/design-slice` fleshes the
+  issue → `/build-slice` ships it. Build starts at **S0 (#1)**.
+- 🔗 **Artifacts:** docs/slices/*.md · GitHub issues #1–#6 · .claude/commands/design-slice.md
+
 <!-- New entries go below this line -->

@@ -16,17 +16,17 @@ final testing = every row here is green at once.
 
 | ID | Invariant | Proven by (test) | Slice | Status |
 |----|-----------|------------------|-------|:------:|
-| INV-1 | The same `ref`, submitted again, is **counted once** (idempotent) | `TestEarn_DuplicateRef_CountedOnce` | S2 | ⬜ |
-| INV-2 | The same `ref` submitted **concurrently** still counts once | `TestEarn_ConcurrentSameRef_Once` (`-race`) | S4 | ⬜ |
-| INV-3 | A spend that would make balance **negative is rejected** (409) | `TestSpend_BelowZero_Rejected` | S3 | ⬜ |
-| INV-4 | **Concurrent spends** on one account never over-draw; final balance exact | `TestSpend_ConcurrentNoOverdraw` (`-race`) | S4 | ⬜ |
-| INV-5 | Balance = sum(earns) − sum(spends), **durable across restart** | `TestBalance_PersistsAcrossRestart` | S2 | ⬜ |
-| INV-6 | **No wire-crossing:** N users hitting their own accounts only ever see their own data | `TestIsolation_NoCrossUserLeak` (`-race`) | S4 | ⬜ |
-| INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S5 | ⬜ |
-| INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S5 | ⬜ |
-| INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S6 | ⬜ |
-| INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S6 | ⬜ |
-| INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S7 | ⬜ |
+| INV-1 | The same `ref`, submitted again, is **counted once** (idempotent) | `TestEarn_DuplicateRef_CountedOnce` | S1 | ⬜ |
+| INV-2 | The same `ref` submitted **concurrently** still counts once | `TestEarn_ConcurrentSameRef_Once` (`-race`) | S1 | ⬜ |
+| INV-3 | A spend that would make balance **negative is rejected** (409) | `TestSpend_BelowZero_Rejected` | S2 | ⬜ |
+| INV-4 | **Concurrent spends** on one account never over-draw; final balance exact | `TestSpend_ConcurrentNoOverdraw` (`-race`) | S2 | ⬜ |
+| INV-5 | Balance = sum(earns) − sum(spends), **durable across restart** | `TestBalance_PersistsAcrossRestart` | S1 | ⬜ |
+| INV-6 | **No wire-crossing:** N users hitting their own accounts only ever see their own data | `TestIsolation_NoCrossUserLeak` (`-race`) | S1 | ⬜ |
+| INV-7 | `member` can only touch **their own** account (else 403) | `TestAccess_MemberOwnOnly` | S3 | ⬜ |
+| INV-8 | `admin` can view **any** account + apply adjustments | `TestAccess_AdminAny` | S3 | ⬜ |
+| INV-9 | Batch ingest is **safe on reprocess** (same file twice = no double count) | `TestBatch_Reprocess_Idempotent` | S5 | ⬜ |
+| INV-10 | Batch produces a **summary** (processed / accepted / rejected / duplicates) | `TestBatch_Summary` | S5 | ⬜ |
+| INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ⬜ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 
