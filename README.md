@@ -46,6 +46,9 @@
     boot fail-fast on missing secret). On branch `slice/s3-auth` (ready for PR).
   - ➡️ **Next:** 🅰️ **S2 — Spend + no-negative guard** (extends the earn tx with a balance check;
     INV-3/4) · in parallel 🅲 **S4 — Audit** (INV-11) · then 🅱️ **S5 — CSV batch ingest** (INV-9/10).
+  - 🔑 **Backlog +1:** 🅱️ **S6 — Login** (credential-based token issuance,
+    [#10](https://github.com/ossewawiel/gowallet/issues/10)) — a real `POST /login` replacing the S3
+    demo mint; seeds demo creds (see **🔑 Test credentials** below).
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).
@@ -96,6 +99,31 @@ open  http://localhost:8080/swagger        # browse the live contract
 
 > 🧪 Run the checks: `go test -race ./...` (needs a real gcc on the PATH for `-race` —
 > e.g. MinGW; `CGO_ENABLED=1`).
+
+---
+
+## 🔑 Test credentials
+
+> ⚠️ **Temporary, demo-only.** These seeded accounts exist purely for local testing and grading —
+> a stop-gap so reviewers can try the protected endpoints. **Full authentication** (real user
+> registration, per-user secrets, nothing published) will be implemented if more time allows.
+
+| Role | account_id | secret |
+|------|-----------|--------|
+| 👤 member | `member-123` | `demo-member-pw` |
+| 🛡️ admin | `admin-001` | `demo-admin-pw` |
+
+Grab a JWT, then send it as `Authorization: Bearer <token>`:
+
+```bash
+curl -X POST localhost:8080/login \
+  -H 'Content-Type: application/json' \
+  -d '{"account_id":"member-123","secret":"demo-member-pw"}'
+# → { "token": "<JWT>" }
+```
+
+> ⏳ `POST /login` + these seeds arrive with **[S6 · login](docs/slices/S6.md)**. Until then, the S3
+> demo `POST /token` mints tokens directly (no credential check).
 
 ---
 

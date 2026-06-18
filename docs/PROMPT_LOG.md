@@ -420,4 +420,67 @@ the walking skeleton, via `/design-slice`).
   `test/acceptance/s3_auth_test.go` · `cmd/gowallet/main.go` (JWT config) · `go.mod`/`go.sum`
   (`golang-jwt/jwt/v5`). Closes #4 once the PR merges.
 
+### ⏱️ 2026-06-18 · Entry 16 — S2 designed (Spend + no-negative guard, design-only)
+
+- 🧑 **Asked:** Run `/design-slice` for **S2** — members can **spend** points; reject any spend that
+  would push the balance **below zero**; bake **concurrency safety (`-race`)** in now. Enforce
+  **INV-3** (negative spend → **409**) and **INV-4** (concurrent spends never overdraw, final balance
+  exact). Design-only; no production code.
+- 🔎 **Explored / decisions weighed (and roads not taken):**
+  - **The crux — keep balance-check + write atomic with no read-then-write gap:**
+    - ❌ **Rejected (a):** read balance first, then insert the spend if it's OK. Leaves a window two
+      concurrent spends can both slip through (both read "enough", both write → overdraw).
+    - ✅ **Chosen (b):** `INSERT ... ON CONFLICT DO NOTHING` **first**, then within the **same
+      `sql.Tx`** recompute `BalanceForAccount` (which now *includes* the just-inserted spend) and
+      **`tx.Rollback()`** if it came out `< 0`. The single writer (`SetMaxOpenConns(1)`) serialises
+      racing spends, so each sees every committed prior spend → **INV-4 holds by construction**, not
+      by hope.
+  - **Idempotent replay skips the balance check** — a known `ref` replaying just returns the stored
+    txn (first-write-wins already validated it). Re-checking would be wrong (and pointless).
+- 🤖 **Did:** Enriched **GitHub issue #3** with the full design — OpenAPI fragment, domain rules, the
+  red-test list, and acceptance criteria. **No production code written.**
+- ✅ **Accepted — zero schema change.** S1's migration already carries everything S2 needs:
+  `CHECK(kind IN ('earn','spend'))`, `UNIQUE(ref)`, `points > 0`, and `BalanceForAccount` already
+  computes `Σearn − Σspend`. So S2 reuses it all — **no new migration, no new `sqlc` query**. The new
+  work is small and surgical:
+
+  | New work | Where |
+  |----------|-------|
+  | `ErrInsufficientBalance` sentinel | `internal/wallet` |
+  | `WalletService.RecordSpend` (mirrors `RecordEarn`) | `internal/wallet` |
+  | In-tx balance guard (rollback if `< 0`) | `internal/sqlitestore.RecordTransaction` |
+  | **409** mapping (the one place) | `internal/httpapi/errors.go` |
+  | Widen `kind` guard + openapi enum → `[earn, spend]` + a 409 response | handler + `api/openapi.yaml` |
+
+- 💡 **Why:** keeping the guard **SQL-level and inside one tx** is the money-rules golden rule — the
+  check and the write can't be torn apart by a concurrent racer. Reusing S1's seam (designed to be
+  extended) means S2 is mostly a *widening*, not a rewrite.
+- 📚 `docs/specifications.pdf` ("Do not allow a spend that would drive the balance below zero") ·
+  `docs/ACCEPTANCE.md` INV-3/INV-4 · S1 code (`internal/sqlitestore/accounts.go` `RecordTransaction`,
+  `queries.sql` `BalanceForAccount`).
+- 🔗 **Artifacts:** GitHub issue #3 (enriched) — https://github.com/ossewawiel/gowallet/issues/3 ·
+  no code commits (design-only). INV-3/INV-4 left at ⬜ in `ACCEPTANCE.md` (build hasn't happened).
+
+### ⏱️ 2026-06-18 · Entry 17 — S6 added: real login (credential-based token issuance)
+
+- 🧑 **Asked:** Is there anything for an admin/user to actually **log in** for a JWT? And: publish the
+  test usernames/passwords in the README for testing, noting it's temporary until full auth is built.
+- 🔎 **Explored:** Authentication (login) vs authorization (the JWT verify + roles S3 already shipped).
+  The brief's Task 2 only requires *authorization* — token issuance is "up to us" — so S3's demo
+  `/token` mint is in-spec. Options weighed: keep demo mint + document caveat · **thin credential
+  login** · full user management.
+- ✅ **Accepted:** the **thin login** — new slice **S6**: bcrypt-hashed secrets on accounts, seed a
+  member + admin, `POST /login` verifies → JWT carrying the **stored** role. Pure-Go bcrypt, stays in
+  the 3-package layout, no signup/reset.
+- ❌ **Rejected:** full user-management (scope creep beyond the brief) · leaving demo-mint-only.
+- 🤖 **Did:** Wrote `docs/slices/S6.md` (kickoff prompt with seed creds + the README-publish + the
+  "temporary measure" note), opened **issue #10** (`slice,stream-b`), registered **INV-14–17** in
+  `ACCEPTANCE.md`, added S6 to `SLICES.md` + the slice index, and published a **🔑 Test credentials**
+  table in `README.md` with the stop-gap caveat.
+- 💡 **Why:** answers "how does a member/admin log in?", shows the authn-vs-authz split + password
+  hashing, stays minimal. Seeded creds in the README are a graded-demo convenience, clearly flagged
+  as temporary.
+- 🔗 **Artifacts:** docs/slices/S6.md · GitHub issue #10 · docs/ACCEPTANCE.md (INV-14–17) ·
+  docs/SLICES.md · docs/slices/README.md · README.md (Test credentials).
+
 <!-- New entries go below this line -->
