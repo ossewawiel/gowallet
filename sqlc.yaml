@@ -1,0 +1,15 @@
+# sqlc config — compiles SQL into typed Go. Generated code lands in
+# internal/sqlitestore/gen and is NEVER hand-edited. schema.sql mirrors the
+# goose migrations purely for type inference; goose remains the runtime truth.
+version: "2"
+sql:
+  - engine: "sqlite"
+    schema: "internal/sqlitestore/queries/schema.sql"
+    queries: "internal/sqlitestore/queries/queries.sql"
+    gen:
+      go:
+        package: "gen"
+        out: "internal/sqlitestore/gen"
+        emit_json_tags: false
+        emit_interface: false
+        emit_empty_slices: true
