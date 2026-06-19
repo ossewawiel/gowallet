@@ -183,6 +183,33 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /accounts/{account_id}/redeem:
+    post:
+      operationId: redeemPoints
+      summary: Redeem points for a reward (member-own / admin-any); idempotent on ref
+      tags: [transactions]
+      parameters:
+        - { name: account_id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewRedemption' }
+      responses:
+        '201':
+          description: Redemption recorded.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } }
+        '200':
+          description: Idempotent replay — the existing redemption for this ref.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } }
+        '400': { description: Malformed body., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: account_id does not exist., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409':
+          description: Redemption rejected — would drive the balance below zero.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
   /batch:
     post:
       operationId: ingestBatch
@@ -311,6 +338,26 @@ components:
         kind:        { type: string, enum: [earn, spend] }
         points:      { type: integer, format: int64, example: 150 }
         occurred_at: { type: string, format: date-time }
+    NewRedemption:
+      type: object
+      additionalProperties: false
+      required: [ref, points, reward, occurred_at]
+      properties:
+        ref:         { type: string, minLength: 1, maxLength: 64, example: rdm-1 }
+        points:      { type: integer, format: int64, minimum: 1, maximum: 9223372036854775807, example: 150 }
+        reward:      { type: string, minLength: 1, maxLength: 256, description: "what the points were redeemed for", example: "R50 voucher" }
+        occurred_at: { type: string, format: date-time, example: "2024-06-01T10:00:00Z" }
+    Redemption:
+      type: object
+      additionalProperties: false
+      required: [ref, account_id, kind, points, reward, occurred_at]
+      properties:
+        ref:         { type: string, example: rdm-1 }
+        account_id:  { type: string, example: member-123 }
+        kind:        { type: string, enum: [redeem] }
+        points:      { type: integer, format: int64, example: 150 }
+        reward:      { type: string, example: "R50 voucher" }
+        occurred_at: { type: string, format: date-time }
     Balance:
       type: object
       additionalProperties: false
@@ -338,7 +385,7 @@ components:
       required: [ref, kind, points, occurred_at]
       properties:
         ref:         { type: string, example: tx-001 }
-        kind:        { type: string, enum: [earn, spend] }
+        kind:        { type: string, enum: [earn, spend, redeem] }
         points:      { type: integer, format: int64, example: 150 }
         occurred_at: { type: string, format: date-time }
     TransactionList:

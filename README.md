@@ -5,7 +5,7 @@
 > that **stay correct under duplicates and concurrency**. Built in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/slices-S0%E2%80%93S7%20shipped-success">
+  <img alt="status" src="https://img.shields.io/badge/slices-S0%E2%80%93S8%20shipped-success">
   <img alt="gate" src="https://img.shields.io/badge/quality%20gate-green-brightgreen">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.x-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
@@ -80,7 +80,7 @@ returns the **same JSON error envelope** (`{ "error": { code, message, request_i
 | `GET /accounts/{id}/balance` | 🧍 own / admin | current balance (live Σ earn − Σ spend) |
 | `GET /accounts/{id}/transactions` | 🧍 own / admin | that account's ledger, **newest-first** |
 | `POST /transactions` | 🧍 own / admin | record an **earn**/**spend** (idempotent on `ref`) |
-| 🔜 `POST /accounts/{id}/redeem` | 🧍 own / admin | **(S8 — planned)** redeem points for a reward — deducts, counts against balance |
+| `POST /accounts/{id}/redeem` | 🧍 own / admin | redeem points for a **reward** — deducts, counts against balance, idempotent on `ref` |
 | `POST /batch` | 🛡️ admin | ingest a CSV → `{processed, accepted, rejected, duplicates}` |
 | `GET /audit` | 🛡️ admin | the audit log, newest-first (optional `?account_id=`) |
 | `GET /openapi.yaml`, `GET /swagger` | 🌍 public | the live contract + Swagger UI |
@@ -100,8 +100,8 @@ Correctness is pinned from **two angles** so nothing slips between them:
 | **Invariants** | business rules, **concurrency**, no wire-crossing | **Go `testing` + `-race`** | `go test -race ./...` |
 
 The business invariants (idempotency, no-overdraw, no cross-user leak) live in a named registry —
-[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — where each `INV-n` maps to a test. **All 23 are green** —
-`INV-24–28` are queued for the redeem slice (S8).
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — where each `INV-n` maps to a test. **All 28 are green** —
+`INV-24–28` landed with the redeem slice (S8), including the redeem-vs-spend concurrency race.
 
 ```bash
 CGO_ENABLED=1 go test -race ./...     # -race needs cgo + a real gcc (e.g. MinGW) on the PATH
@@ -111,8 +111,8 @@ CGO_ENABLED=1 go test -race ./...     # -race needs cgo + a real gcc (e.g. MinGW
 > Schemathesis-with-token recipe live in [`CLAUDE.md`](CLAUDE.md). Full test walkthrough →
 > [`docs/DEMO.md` §9](docs/DEMO.md).
 
-**Latest full gate:** gofmt ✓ · vet ✓ · golangci-lint **0 issues** ✓ · build ✓ · `-race` **39
-acceptance tests** ✓ · Schemathesis **10/10 operations · 986 stateful scenarios · 8368 cases · exit 0** ✓.
+**Latest full gate:** gofmt ✓ · vet ✓ · golangci-lint **0 issues** ✓ · build ✓ · `-race` ✓ ·
+Schemathesis **10104 cases · exit 0** ✓.
 
 ---
 
@@ -188,11 +188,14 @@ green. → [`docs/DEVELOPMENT_FLOW.md`](docs/DEVELOPMENT_FLOW.md) · [`docs/SLIC
 |------|------------------|:-----:|
 | **1 · Plumbing** | Go toolchain, public repo, prompt timeline started | ✅ done |
 | **2 · Dev system** | CLAUDE.md, engineering docs, skills, subagents, commands, issue templates | ✅ done |
-| **3 · Design & build** | the wallet — **8 slices S0→S7**, spec-first + TDD | ✅ **all shipped** |
+| **3 · Design & build** | the wallet — **9 slices S0→S8**, spec-first + TDD | ✅ **all shipped** |
 
-**All core slices are landed and green** — `S0` skeleton · `S1` accounts/earn/balance · `S2` spend +
-no-negative guard · `S3` JWT auth · `S4` audit trail · `S5` CSV batch · `S6` credential login · `S7`
-listings. Every `INV-1…23` proven; full gate green.
+**Just landed: `S8` redeem** — `POST /accounts/{id}/redeem` deducts points for a reward, reusing the
+S2 atomic guard (no overdraw, even on redeem-vs-spend races) and idempotent on `ref`.
+
+**All feature slices are landed and green** — `S0` skeleton · `S1` accounts/earn/balance · `S2`
+spend + no-negative guard · `S3` JWT auth · `S4` audit trail · `S5` CSV batch · `S6` credential
+login · `S7` listings · `S8` redeem. Every `INV-1…28` proven; full gate green.
 
 ➡️ **Remaining is hardening/polish**, not new features: pagination on the listings, integer-overflow
 handling, the Postgres-swap path.
@@ -208,6 +211,7 @@ handling, the Postgres-swap path.
 - ✅ **[S5 / #6](https://github.com/ossewawiel/gowallet/issues/6)** — admin `POST /batch` CSV ingest; rejects are data, not errors. INV-9/10/23.
 - ✅ **[S6 / #10](https://github.com/ossewawiel/gowallet/issues/10)** — `POST /login`, bcrypt creds, role from store, identical-401 (no enumeration). INV-14–17.
 - ✅ **[S7 / #13](https://github.com/ossewawiel/gowallet/issues/13)** — admin `GET /accounts` + per-account ledger; reuse, no migration. INV-18/19/20.
+- ✅ **[S8 / #19](https://github.com/ossewawiel/gowallet/issues/19)** — `POST /accounts/{id}/redeem` for a reward; `kind=redeem`, reuses the S2 atomic guard, explicit deduction set. INV-24–28.
 
 </details>
 
