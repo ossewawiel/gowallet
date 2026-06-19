@@ -16,6 +16,7 @@ type fakeRepo struct {
 	accounts map[string]wallet.Account
 	hashes   map[string]string
 	byRef    map[string]wallet.Transaction
+	order    []string // ref insertion order, so ListTransactions can be newest-first
 	// recordErr, when non-nil, is returned by RecordTransaction for a fresh ref.
 	// Lets a unit test drive the store-level error path (e.g. insufficient
 	// balance) without a real DB — the service must pass it through untouched.
@@ -79,6 +80,45 @@ func (f *fakeRepo) Balance(_ context.Context, id string) (int64, error) {
 	return bal, nil
 }
 
+// ListAccounts / ListTransactions satisfy the extended AccountRepository. byRef
+// is a map (unordered), so the fake replays f.order (insertion order) in reverse
+// to mirror the real store's newest-first-by-id contract.
+
+func (f *fakeRepo) ListAccounts(_ context.Context) ([]wallet.AccountSummary, error) {
+	out := make([]wallet.AccountSummary, 0, len(f.accounts))
+	for id, a := range f.accounts {
+		var bal int64
+		for _, t := range f.byRef {
+			if t.AccountID != id {
+				continue
+			}
+			switch t.Kind {
+			case wallet.KindEarn:
+				bal += t.Points
+			case wallet.KindSpend:
+				bal -= t.Points
+			}
+		}
+		out = append(out, wallet.AccountSummary{ID: id, Name: a.Name, Role: wallet.RoleMember, Balance: bal})
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) ListTransactions(_ context.Context, accountID string) ([]wallet.Transaction, error) {
+	if _, ok := f.accounts[accountID]; !ok {
+		return nil, wallet.ErrNotFound
+	}
+	// Newest-first: f.order records insertion order; walk it in reverse.
+	out := make([]wallet.Transaction, 0)
+	for i := len(f.order) - 1; i >= 0; i-- {
+		t := f.byRef[f.order[i]]
+		if t.AccountID == accountID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) RecordTransaction(_ context.Context, t wallet.Transaction) (wallet.Transaction, bool, error) {
 	if _, ok := f.accounts[t.AccountID]; !ok {
 		return wallet.Transaction{}, false, wallet.ErrNotFound
@@ -90,6 +130,7 @@ func (f *fakeRepo) RecordTransaction(_ context.Context, t wallet.Transaction) (w
 		return wallet.Transaction{}, false, f.recordErr
 	}
 	f.byRef[t.Ref] = t
+	f.order = append(f.order, t.Ref)
 	return t, true, nil
 }
 
@@ -234,6 +275,66 @@ func TestGetAccount_Missing_NotFound(t *testing.T) {
 	_, err := svc.GetAccount(context.Background(), "ghost")
 	if !errors.Is(err, wallet.ErrNotFound) {
 		t.Fatalf("err: want ErrNotFound, got %v", err)
+	}
+}
+
+// TestListAccounts_ReturnsSummariesWithBalance — the service maps store rows to
+// summaries, each carrying its derived balance (Σ earn − Σ spend).
+func TestListAccounts_ReturnsSummariesWithBalance(t *testing.T) {
+	svc, _ := newService(t)
+	mustAccount(t, svc, "member-1")
+	mustAccount(t, svc, "member-2")
+	if _, _, err := svc.RecordEarn(context.Background(), earn("tx-1", "member-1", 150)); err != nil {
+		t.Fatalf("earn: %v", err)
+	}
+
+	got, err := svc.ListAccounts(context.Background())
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 summaries, got %d", len(got))
+	}
+	bal := map[string]int64{}
+	for _, s := range got {
+		bal[s.ID] = s.Balance
+	}
+	if bal["member-1"] != 150 {
+		t.Fatalf("member-1 balance: want 150, got %d", bal["member-1"])
+	}
+	if bal["member-2"] != 0 {
+		t.Fatalf("member-2 balance: want 0, got %d", bal["member-2"])
+	}
+}
+
+// TestListTransactions_MissingAccount_NotFound — an unknown account yields ErrNotFound.
+func TestListTransactions_MissingAccount_NotFound(t *testing.T) {
+	svc, _ := newService(t)
+	_, err := svc.ListTransactions(context.Background(), "ghost")
+	if !errors.Is(err, wallet.ErrNotFound) {
+		t.Fatalf("err: want ErrNotFound, got %v", err)
+	}
+}
+
+// TestListTransactions_NewestFirst — the returned slice is newest-first.
+func TestListTransactions_NewestFirst(t *testing.T) {
+	svc, _ := newService(t)
+	mustAccount(t, svc, "member-1")
+	for _, ref := range []string{"tx-a", "tx-b", "tx-c"} {
+		if _, _, err := svc.RecordEarn(context.Background(), earn(ref, "member-1", 10)); err != nil {
+			t.Fatalf("earn %s: %v", ref, err)
+		}
+	}
+
+	got, err := svc.ListTransactions(context.Background(), "member-1")
+	if err != nil {
+		t.Fatalf("ListTransactions: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 txns, got %d", len(got))
+	}
+	if got[0].Ref != "tx-c" || got[2].Ref != "tx-a" {
+		t.Fatalf("newest-first: got order %s, %s, %s", got[0].Ref, got[1].Ref, got[2].Ref)
 	}
 }
 

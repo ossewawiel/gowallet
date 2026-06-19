@@ -22,6 +22,24 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for AccountSummaryRole.
+const (
+	Admin  AccountSummaryRole = "admin"
+	Member AccountSummaryRole = "member"
+)
+
+// Valid indicates whether the value is a known member of the AccountSummaryRole enum.
+func (e AccountSummaryRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Member:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AuditEntryOutcome.
 const (
 	Accepted  AuditEntryOutcome = "accepted"
@@ -79,6 +97,24 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for LedgerEntryKind.
+const (
+	LedgerEntryKindEarn  LedgerEntryKind = "earn"
+	LedgerEntryKindSpend LedgerEntryKind = "spend"
+)
+
+// Valid indicates whether the value is a known member of the LedgerEntryKind enum.
+func (e LedgerEntryKind) Valid() bool {
+	switch e {
+	case LedgerEntryKindEarn:
+		return true
+	case LedgerEntryKindSpend:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NewTransactionKind.
 const (
 	NewTransactionKindEarn  NewTransactionKind = "earn"
@@ -114,16 +150,16 @@ func (e TokenResponseTokenType) Valid() bool {
 
 // Defines values for TransactionKind.
 const (
-	TransactionKindEarn  TransactionKind = "earn"
-	TransactionKindSpend TransactionKind = "spend"
+	Earn  TransactionKind = "earn"
+	Spend TransactionKind = "spend"
 )
 
 // Valid indicates whether the value is a known member of the TransactionKind enum.
 func (e TransactionKind) Valid() bool {
 	switch e {
-	case TransactionKindEarn:
+	case Earn:
 		return true
-	case TransactionKindSpend:
+	case Spend:
 		return true
 	default:
 		return false
@@ -136,6 +172,20 @@ type Account struct {
 	CreatedAt time.Time `json:"created_at"`
 	Name      string    `json:"name"`
 }
+
+// AccountList defines model for AccountList.
+type AccountList = []AccountSummary
+
+// AccountSummary defines model for AccountSummary.
+type AccountSummary struct {
+	AccountId string             `json:"account_id"`
+	Balance   int64              `json:"balance"`
+	Name      string             `json:"name"`
+	Role      AccountSummaryRole `json:"role"`
+}
+
+// AccountSummaryRole defines model for AccountSummary.Role.
+type AccountSummaryRole string
 
 // AuditEntry defines model for AuditEntry.
 type AuditEntry struct {
@@ -200,6 +250,17 @@ type HealthDb string
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// LedgerEntry defines model for LedgerEntry.
+type LedgerEntry struct {
+	Kind       LedgerEntryKind `json:"kind"`
+	OccurredAt time.Time       `json:"occurred_at"`
+	Points     int64           `json:"points"`
+	Ref        string          `json:"ref"`
+}
+
+// LedgerEntryKind defines model for LedgerEntry.Kind.
+type LedgerEntryKind string
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	AccountId string  `json:"account_id"`
@@ -252,6 +313,9 @@ type Transaction struct {
 // TransactionKind defines model for Transaction.Kind.
 type TransactionKind string
 
+// TransactionList defines model for TransactionList.
+type TransactionList = []LedgerEntry
+
 // Forbidden Single error envelope used across the whole API (RFC 9457-ish, trimmed).
 type Forbidden = Error
 
@@ -287,6 +351,9 @@ type CreateTransactionJSONRequestBody = NewTransaction
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List all accounts with their derived balance (admin only)
+	// (GET /accounts)
+	ListAccounts(w http.ResponseWriter, r *http.Request)
 	// Create a member account
 	// (POST /accounts)
 	CreateAccount(w http.ResponseWriter, r *http.Request)
@@ -296,6 +363,9 @@ type ServerInterface interface {
 	// Current balance for an account
 	// (GET /accounts/{account_id}/balance)
 	GetBalance(w http.ResponseWriter, r *http.Request, accountId string)
+	// List an account's transactions, newest-first (member-own / admin-any)
+	// (GET /accounts/{account_id}/transactions)
+	ListTransactions(w http.ResponseWriter, r *http.Request, accountId string)
 	// List recorded transaction attempts (admin only), newest-first
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
@@ -317,6 +387,12 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// List all accounts with their derived balance (admin only)
+// (GET /accounts)
+func (_ Unimplemented) ListAccounts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Create a member account
 // (POST /accounts)
 func (_ Unimplemented) CreateAccount(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +408,12 @@ func (_ Unimplemented) GetAccount(w http.ResponseWriter, r *http.Request, accoun
 // Current balance for an account
 // (GET /accounts/{account_id}/balance)
 func (_ Unimplemented) GetBalance(w http.ResponseWriter, r *http.Request, accountId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List an account's transactions, newest-first (member-own / admin-any)
+// (GET /accounts/{account_id}/transactions)
+func (_ Unimplemented) ListTransactions(w http.ResponseWriter, r *http.Request, accountId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -373,6 +455,26 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ListAccounts(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAccounts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // CreateAccount operation middleware
 func (siw *ServerInterfaceWrapper) CreateAccount(w http.ResponseWriter, r *http.Request) {
@@ -449,6 +551,38 @@ func (siw *ServerInterfaceWrapper) GetBalance(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetBalance(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTransactions operation middleware
+func (siw *ServerInterfaceWrapper) ListTransactions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", chi.URLParam(r, "account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTransactions(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -679,6 +813,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/accounts", wrapper.ListAccounts)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/accounts", wrapper.CreateAccount)
 	})
 	r.Group(func(r chi.Router) {
@@ -686,6 +823,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/accounts/{account_id}/balance", wrapper.GetBalance)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/accounts/{account_id}/transactions", wrapper.ListTransactions)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/audit", wrapper.ListAudit)
@@ -709,6 +849,55 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 type ForbiddenJSONResponse Error
 
 type UnauthorizedJSONResponse Error
+
+type ListAccountsRequestObject struct {
+}
+
+type ListAccountsResponseObject interface {
+	VisitListAccountsResponse(w http.ResponseWriter) error
+}
+
+type ListAccounts200JSONResponse AccountList
+
+func (response ListAccounts200JSONResponse) VisitListAccountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccounts401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAccounts401JSONResponse) VisitListAccountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccounts403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListAccounts403JSONResponse) VisitListAccountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type CreateAccountRequestObject struct {
 	Body *CreateAccountJSONRequestBody
@@ -929,6 +1118,84 @@ func (response GetBalance403JSONResponse) VisitGetBalanceResponse(w http.Respons
 type GetBalance404JSONResponse Error
 
 func (response GetBalance404JSONResponse) VisitGetBalanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTransactionsRequestObject struct {
+	AccountId string `json:"account_id"`
+}
+
+type ListTransactionsResponseObject interface {
+	VisitListTransactionsResponse(w http.ResponseWriter) error
+}
+
+type ListTransactions200JSONResponse TransactionList
+
+func (response ListTransactions200JSONResponse) VisitListTransactionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTransactions400JSONResponse Error
+
+func (response ListTransactions400JSONResponse) VisitListTransactionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTransactions401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListTransactions401JSONResponse) VisitListTransactionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTransactions403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListTransactions403JSONResponse) VisitListTransactionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTransactions404JSONResponse Error
+
+func (response ListTransactions404JSONResponse) VisitListTransactionsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1261,6 +1528,9 @@ func (response CreateTransaction409JSONResponse) VisitCreateTransactionResponse(
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// List all accounts with their derived balance (admin only)
+	// (GET /accounts)
+	ListAccounts(ctx context.Context, request ListAccountsRequestObject) (ListAccountsResponseObject, error)
 	// Create a member account
 	// (POST /accounts)
 	CreateAccount(ctx context.Context, request CreateAccountRequestObject) (CreateAccountResponseObject, error)
@@ -1270,6 +1540,9 @@ type StrictServerInterface interface {
 	// Current balance for an account
 	// (GET /accounts/{account_id}/balance)
 	GetBalance(ctx context.Context, request GetBalanceRequestObject) (GetBalanceResponseObject, error)
+	// List an account's transactions, newest-first (member-own / admin-any)
+	// (GET /accounts/{account_id}/transactions)
+	ListTransactions(ctx context.Context, request ListTransactionsRequestObject) (ListTransactionsResponseObject, error)
 	// List recorded transaction attempts (admin only), newest-first
 	// (GET /audit)
 	ListAudit(ctx context.Context, request ListAuditRequestObject) (ListAuditResponseObject, error)
@@ -1314,6 +1587,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAccounts operation middleware
+func (sh *strictHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
+	var request ListAccountsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAccounts(ctx, request.(ListAccountsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAccounts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAccountsResponseObject); ok {
+		if err := validResponse.VisitListAccountsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // CreateAccount operation middleware
@@ -1392,6 +1689,32 @@ func (sh *strictHandler) GetBalance(w http.ResponseWriter, r *http.Request, acco
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetBalanceResponseObject); ok {
 		if err := validResponse.VisitGetBalanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTransactions operation middleware
+func (sh *strictHandler) ListTransactions(w http.ResponseWriter, r *http.Request, accountId string) {
+	var request ListTransactionsRequestObject
+
+	request.AccountId = accountId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTransactions(ctx, request.(ListTransactionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTransactions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTransactionsResponseObject); ok {
+		if err := validResponse.VisitListTransactionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -175,6 +175,53 @@ func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionPa
 	)
 }
 
+const listAccountsWithBalance = `-- name: ListAccountsWithBalance :many
+SELECT a.account_id, a.name, a.role,
+       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points ELSE -t.points END)
+                      FROM transactions t WHERE t.account_id = a.account_id), 0) AS INTEGER) AS balance
+FROM accounts a
+ORDER BY a.account_id
+`
+
+type ListAccountsWithBalanceRow struct {
+	AccountID string
+	Name      string
+	Role      string
+	Balance   int64
+}
+
+// Each account joined to its derived balance (sum(earn) - sum(spend)) via a
+// correlated subquery -- the SAME formula as BalanceForAccount, so the list
+// balance can never drift from GET /balance. COALESCE(...,0) so an account with
+// no txns shows 0.
+func (q *Queries) ListAccountsWithBalance(ctx context.Context) ([]ListAccountsWithBalanceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountsWithBalance)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAccountsWithBalanceRow{}
+	for rows.Next() {
+		var i ListAccountsWithBalanceRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.Name,
+			&i.Role,
+			&i.Balance,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuditLog = `-- name: ListAuditLog :many
 SELECT id, ref, account_id, kind, points, outcome, reason, created_at
 FROM audit_log
@@ -238,6 +285,50 @@ func (q *Queries) ListAuditLogByAccount(ctx context.Context, accountID string) (
 			&i.Outcome,
 			&i.Reason,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTransactionsByAccount = `-- name: ListTransactionsByAccount :many
+SELECT ref, kind, points, occurred_at
+FROM transactions
+WHERE account_id = ?
+ORDER BY id DESC
+`
+
+type ListTransactionsByAccountRow struct {
+	Ref        string
+	Kind       string
+	Points     int64
+	OccurredAt string
+}
+
+// Newest-first by id (strictly monotonic AUTOINCREMENT) -- stable even when two
+// rows share an occurred_at. Account existence is checked by the caller first.
+func (q *Queries) ListTransactionsByAccount(ctx context.Context, accountID string) ([]ListTransactionsByAccountRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTransactionsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTransactionsByAccountRow{}
+	for rows.Next() {
+		var i ListTransactionsByAccountRow
+		if err := rows.Scan(
+			&i.Ref,
+			&i.Kind,
+			&i.Points,
+			&i.OccurredAt,
 		); err != nil {
 			return nil, err
 		}
