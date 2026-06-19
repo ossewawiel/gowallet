@@ -911,4 +911,95 @@ the walking skeleton, via `/design-slice`).
 - 🔗 **Artifacts:** docs/slices/S8.md · GitHub issue #19 · ACCEPTANCE INV-24–28 · SLICES.md ·
   docs/slices/README.md · README.md · SOLUTION.md.
 
+### ⏱️ 2026-06-19 · Entry 32 — S8 (Redeem points) **designed** (no code yet)
+
+- 🧑 **Asked:** Design slice **S8** for real: `POST /accounts/{account_id}/redeem` — member-own /
+  admin-any, a new `kind=redeem` that carries a `reward`, **idempotent on `ref`**, and **409** when
+  the balance can't cover it.
+- 🔎 **Explored — three forks, each settled:**
+  - **Distinct `kind=redeem` vs reusing `spend`** → went **distinct**. Redeem records *redemption
+    intent + the reward it bought*; `spend` stays the generic/admin deduction.
+  - **FK toggle / `NO TRANSACTION` in the rebuild migration?** → **neither needed.** `transactions`
+    is a pure *child* of `accounts` and nothing FK-references it, so the classic
+    create→copy→drop→rename rebuild is FK-safe **inside goose's default transaction**.
+  - **Surface `reward` in the per-account ledger?** → **no.** `LedgerEntry` shape stays
+    `{ref, kind, points, occurred_at}`; the `reward` rides the redeem **response** + lives in the
+    stored row only.
+- 🤖 **Did:** Enriched **issue #19** into a build-ready design — OpenAPI fragment (new path
+  `/accounts/{account_id}/redeem`, `NewRedemption`/`Redemption` schemas, `LedgerEntry.kind` enum
+  widened to include `redeem`), the timestamped rebuild migration
+  **`20260619100000_s8_redeem_kind.sql`** (up + down), the `sqlc` deltas, domain rules, the red-test
+  list, and acceptance criteria. **No production code written** — design only.
+- ✅ **Accepted + 💡 why:**
+  - **Distinct `kind=redeem` + required `reward`** — records *what* the points bought; `spend` stays
+    generic so admin adjustments don't carry reward semantics.
+  - **Key finding (inverts the kickoff risk):** the existing balance formula
+    `CASE WHEN kind='earn' THEN points ELSE -points END` is a **catch-all** that *already* deducts
+    `redeem` — so balances are correct **for free**. We'll still make the deduction set **explicit**
+    (`WHEN kind IN ('spend','redeem') THEN -points ELSE 0`) so a *future* kind can't be silently
+    treated as a deduction. The real risk was the over-eager catch-all, **not** a missed update.
+  - **Reuse the S2 atomic in-tx guard** — just widen its trigger to `spend OR redeem`. Reuse
+    `ErrInsufficientBalance` (generalise its message to "transaction would…"; code stays
+    `insufficient_balance`). **No new sentinel error.**
+  - **`NewTransaction`/`Transaction.kind` stay `[earn, spend]`** — redeem has its own endpoint;
+    only `LedgerEntry.kind` widens.
+  - **Redeem is not audited** — consistent with earn/spend; the brief only audits batch.
+- 🔗 **Artifacts:** GitHub issue **#19** (enriched) · invariants **INV-24–28** · planned migration
+  **`20260619100000_s8_redeem_kind.sql`**.
+
+### ⏱️ 2026-06-19 · Entry 33 — S8 built (Redeem points, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 19` — build **S8** (redeem points) end-to-end with strict
+  spec-first TDD (red → green → refactor → prove).
+- 🤖 **Did:** Branched `slice/s8-redeem`. **Spec-first RED** — added `POST
+  /accounts/{account_id}/redeem` + `NewRedemption`/`Redemption` schemas to `api/openapi.yaml`,
+  widened `LedgerEntry.kind` enum to `[earn, spend, redeem]` (kept `NewTransaction`/`Transaction`
+  at `[earn, spend]` — redeem has its own endpoint, never via `POST /transactions`), regen via
+  `oapi-codegen`; failing unit/store/acceptance tests. → **GREEN** — timestamped rebuild migration
+  **`20260619100000_s8_redeem_kind.sql`** (create→copy→drop→rename, since SQLite can't `ALTER` a
+  `CHECK`) widening `transactions.kind` to include `redeem` + adding a nullable `reward` TEXT column,
+  preserving `UNIQUE(ref)`, the FK, the `points>0` CHECK and `idx_transactions_account`;
+  `internal/httpapi/redeem.go` (`RedeemPoints` handler); `wallet.KindRedeem` + `Transaction.Reward`
+  + `RecordRedeem` in `wallet.go`; widened store guard + reward mapping in `sqlitestore/accounts.go`.
+  → **REFACTOR → PROVE**.
+- ✅ **Accepted:** quality gate **green** — gofmt · go vet · golangci-lint **0 issues** ·
+  `go build ./...` · `go test -race ./...` (**exit 0**) · Schemathesis (**exit 0, 10104 cases**).
+  **INV-24 / INV-25 / INV-26 / INV-27 / INV-28 proven.**
+- 💡 **Build confirmations worth recording:**
+  - **Explicit deduction set landed:** `BalanceForAccount` + `ListAccountsWithBalance` now read
+    `WHEN kind IN ('spend','redeem') THEN -points ELSE 0` (was a catch-all `ELSE -points`) — so a
+    *future* kind can't be silently treated as a deduction. This is the inversion flagged in the
+    design (Entry 32): the real risk was the over-eager catch-all, not a missed balance update.
+  - **Reused the S2 atomic in-tx guard** — just widened its trigger to `spend OR redeem`; the
+    insert-then-recompute-then-rollback-if-`<0` shape is unchanged. **No new sentinel error:** reused
+    `ErrInsufficientBalance` (message generalised to "transaction would drive balance below zero";
+    code stays `insufficient_balance`). The redeem-vs-spend race is covered in
+    `TestRedeem_ConcurrentNoOverdraw`.
+  - **Identity from the verified token via `authorizeTarget`** (member-own / admin-any), authorized
+    before hitting the store.
+  - **Redeem is NOT audited** — consistent with earn/spend; the brief only audits batch.
+  - **Migration is FK-safe inside goose's default transaction** — nothing FK-references
+    `transactions`, so no PRAGMA toggle / `NO TRANSACTION` was needed; up/down round-trip verified.
+- 🪟 **One wrinkle worth recording:** IDE/gopls diagnostics falsely flagged a broken tree (undefined
+  `gen.*` / `KindRedeem`, a bogus "crypto not in go.mod") — but an independent `go build`, `go vet`,
+  and `go test -race ./...` (**exit 0**) all came back green. It was **stale gopls state**, not a
+  real failure; trust the compiler over the language server here.
+- 🧪 **Tests added:**
+  - **acceptance** (`test/acceptance/s8_redeem_test.go`) — `TestRedeem_DeductsFromBalance`,
+    `TestRedeem_BelowZero_Rejected`, `TestRedeem_ConcurrentNoOverdraw` (`-race`, incl. the
+    redeem-vs-spend race), `TestRedeem_MemberOwnOnly`, `TestRedeem_RecordsReward`,
+    `TestRedeem_DuplicateRef_CountedOnce`;
+  - **domain** (`internal/wallet/redeem_test.go`) — `TestRecordRedeem_RequiresReward`,
+    `TestRecordRedeem_ForcesKindRedeem`, `TestRecordRedeem_RejectsNonPositivePoints`;
+  - **store** (`internal/sqlitestore/redeem_test.go`) —
+    `TestRecordTransaction_RedeemGuard_RollsBackBelowZero`,
+    `TestRecordTransaction_RedeemStoresReward`.
+- 📚 GitHub issue #19 (design) · `docs/specifications.pdf` · `docs/ACCEPTANCE.md` INV-24–28 ·
+  S2's `RecordTransaction` guard seam · `tdd-workflow` skill.
+- 🔗 **Artifacts:** branch `slice/s8-redeem` · issue #19 · migration
+  `internal/sqlitestore/migrations/20260619100000_s8_redeem_kind.sql` · new
+  `internal/httpapi/redeem.go` · `internal/wallet/wallet.go` (`KindRedeem`, `Transaction.Reward`,
+  `RecordRedeem`) · `internal/sqlitestore/accounts.go` (widened guard + reward mapping) ·
+  `api/openapi.yaml` · `internal/httpapi/gen/*` · new test files above. INV-24–28 → ✅.
+
 <!-- New entries go below this line -->

@@ -60,11 +60,16 @@ func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryPara
 }
 
 const balanceForAccount = `-- name: BalanceForAccount :one
-SELECT CAST(COALESCE(SUM(CASE WHEN kind = 'earn' THEN points ELSE -points END), 0) AS INTEGER) AS balance
+SELECT CAST(COALESCE(SUM(
+  CASE WHEN kind = 'earn' THEN points
+       WHEN kind IN ('spend','redeem') THEN -points
+       ELSE 0 END), 0) AS INTEGER) AS balance
 FROM transactions
 WHERE account_id = ?
 `
 
+// Deduction set is EXPLICIT (spend OR redeem subtract); any other kind adds 0,
+// so a future kind can't silently be treated as a deduction by a catch-all.
 func (q *Queries) BalanceForAccount(ctx context.Context, accountID string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, balanceForAccount, accountID)
 	var balance int64
@@ -125,7 +130,7 @@ func (q *Queries) GetAccountCredential(ctx context.Context, accountID string) (G
 }
 
 const getTransactionByRef = `-- name: GetTransactionByRef :one
-SELECT ref, account_id, kind, points, occurred_at
+SELECT ref, account_id, kind, points, reward, occurred_at
 FROM transactions
 WHERE ref = ?
 `
@@ -135,9 +140,11 @@ type GetTransactionByRefRow struct {
 	AccountID  string
 	Kind       string
 	Points     int64
+	Reward     sql.NullString
 	OccurredAt string
 }
 
+// Select reward too, so a stored redemption round-trips its reward.
 func (q *Queries) GetTransactionByRef(ctx context.Context, ref string) (GetTransactionByRefRow, error) {
 	row := q.db.QueryRowContext(ctx, getTransactionByRef, ref)
 	var i GetTransactionByRefRow
@@ -146,14 +153,15 @@ func (q *Queries) GetTransactionByRef(ctx context.Context, ref string) (GetTrans
 		&i.AccountID,
 		&i.Kind,
 		&i.Points,
+		&i.Reward,
 		&i.OccurredAt,
 	)
 	return i, err
 }
 
 const insertTransaction = `-- name: InsertTransaction :execresult
-INSERT INTO transactions (ref, account_id, kind, points, occurred_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO transactions (ref, account_id, kind, points, reward, occurred_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(ref) DO NOTHING
 `
 
@@ -162,22 +170,27 @@ type InsertTransactionParams struct {
 	AccountID  string
 	Kind       string
 	Points     int64
+	Reward     sql.NullString
 	OccurredAt string
 }
 
+// Now carries reward (NULL for earn/spend; set only on redeem rows).
 func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, insertTransaction,
 		arg.Ref,
 		arg.AccountID,
 		arg.Kind,
 		arg.Points,
+		arg.Reward,
 		arg.OccurredAt,
 	)
 }
 
 const listAccountsWithBalance = `-- name: ListAccountsWithBalance :many
 SELECT a.account_id, a.name, a.role,
-       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points ELSE -t.points END)
+       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points
+                                      WHEN t.kind IN ('spend','redeem') THEN -t.points
+                                      ELSE 0 END)
                       FROM transactions t WHERE t.account_id = a.account_id), 0) AS INTEGER) AS balance
 FROM accounts a
 ORDER BY a.account_id

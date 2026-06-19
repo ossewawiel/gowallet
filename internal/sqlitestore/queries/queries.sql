@@ -15,17 +15,24 @@ SELECT password_hash, role FROM accounts WHERE account_id = ?;
 SELECT EXISTS(SELECT 1 FROM accounts WHERE account_id = ?) AS present;
 
 -- name: InsertTransaction :execresult
-INSERT INTO transactions (ref, account_id, kind, points, occurred_at)
-VALUES (?, ?, ?, ?, ?)
+-- Now carries reward (NULL for earn/spend; set only on redeem rows).
+INSERT INTO transactions (ref, account_id, kind, points, reward, occurred_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(ref) DO NOTHING;
 
 -- name: GetTransactionByRef :one
-SELECT ref, account_id, kind, points, occurred_at
+-- Select reward too, so a stored redemption round-trips its reward.
+SELECT ref, account_id, kind, points, reward, occurred_at
 FROM transactions
 WHERE ref = ?;
 
 -- name: BalanceForAccount :one
-SELECT CAST(COALESCE(SUM(CASE WHEN kind = 'earn' THEN points ELSE -points END), 0) AS INTEGER) AS balance
+-- Deduction set is EXPLICIT (spend OR redeem subtract); any other kind adds 0,
+-- so a future kind can't silently be treated as a deduction by a catch-all.
+SELECT CAST(COALESCE(SUM(
+  CASE WHEN kind = 'earn' THEN points
+       WHEN kind IN ('spend','redeem') THEN -points
+       ELSE 0 END), 0) AS INTEGER) AS balance
 FROM transactions
 WHERE account_id = ?;
 
@@ -35,7 +42,9 @@ WHERE account_id = ?;
 -- balance can never drift from GET /balance. COALESCE(...,0) so an account with
 -- no txns shows 0.
 SELECT a.account_id, a.name, a.role,
-       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points ELSE -t.points END)
+       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points
+                                      WHEN t.kind IN ('spend','redeem') THEN -t.points
+                                      ELSE 0 END)
                       FROM transactions t WHERE t.account_id = a.account_id), 0) AS INTEGER) AS balance
 FROM accounts a
 ORDER BY a.account_id;

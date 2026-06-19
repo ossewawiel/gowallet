@@ -49,6 +49,10 @@ const (
 	KindEarn Kind = "earn"
 	// KindSpend subtracts points. The DB allows it; S2 opens the API to it.
 	KindSpend Kind = "spend"
+	// KindRedeem subtracts points for a reward (member redemption). Like spend
+	// it's a deduction guarded against going negative, but it's member-initiated
+	// and carries a Reward recording what the points bought (S8).
+	KindRedeem Kind = "redeem"
 )
 
 // Account is a member's wallet account. Pure Go — no DB types.
@@ -61,10 +65,13 @@ type Account struct {
 // Transaction is one ledger entry. Points are integers; OccurredAt is the
 // client's business time (RFC 3339 UTC).
 type Transaction struct {
-	Ref        string
-	AccountID  string
-	Kind       Kind
-	Points     int64
+	Ref       string
+	AccountID string
+	Kind      Kind
+	Points    int64
+	// Reward records what the points were redeemed for. It is set only on
+	// redeem rows (required there); empty for earn/spend.
+	Reward     string
 	OccurredAt time.Time
 }
 
@@ -211,5 +218,19 @@ func (s *WalletService) RecordSpend(ctx context.Context, in Transaction) (Transa
 		return Transaction{}, false, ErrInvalidInput
 	}
 	in.Kind = KindSpend
+	return s.txns.RecordTransaction(ctx, in)
+}
+
+// RecordRedeem records a member redemption: a deduction that records WHAT the
+// points bought via Reward. Reward is required (it's the whole point of a
+// redeem) — an empty one is ErrInvalidInput. It forces Kind=redeem and delegates
+// to the same atomic insert-then-check-and-rollback path as spend, so a redeem
+// that would drive the balance below zero returns ErrInsufficientBalance and
+// persists nothing. Thin pass-through, exactly like RecordSpend.
+func (s *WalletService) RecordRedeem(ctx context.Context, in Transaction) (Transaction, bool, error) {
+	if in.Ref == "" || in.AccountID == "" || in.Points <= 0 || in.Reward == "" {
+		return Transaction{}, false, ErrInvalidInput
+	}
+	in.Kind = KindRedeem
 	return s.txns.RecordTransaction(ctx, in)
 }

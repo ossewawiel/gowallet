@@ -99,14 +99,17 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for LedgerEntryKind.
 const (
-	LedgerEntryKindEarn  LedgerEntryKind = "earn"
-	LedgerEntryKindSpend LedgerEntryKind = "spend"
+	LedgerEntryKindEarn   LedgerEntryKind = "earn"
+	LedgerEntryKindRedeem LedgerEntryKind = "redeem"
+	LedgerEntryKindSpend  LedgerEntryKind = "spend"
 )
 
 // Valid indicates whether the value is a known member of the LedgerEntryKind enum.
 func (e LedgerEntryKind) Valid() bool {
 	switch e {
 	case LedgerEntryKindEarn:
+		return true
+	case LedgerEntryKindRedeem:
 		return true
 	case LedgerEntryKindSpend:
 		return true
@@ -127,6 +130,21 @@ func (e NewTransactionKind) Valid() bool {
 	case NewTransactionKindEarn:
 		return true
 	case NewTransactionKindSpend:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RedemptionKind.
+const (
+	Redeem RedemptionKind = "redeem"
+)
+
+// Valid indicates whether the value is a known member of the RedemptionKind enum.
+func (e RedemptionKind) Valid() bool {
+	switch e {
+	case Redeem:
 		return true
 	default:
 		return false
@@ -274,6 +292,16 @@ type NewAccount struct {
 	Secret    *string `json:"secret,omitempty"`
 }
 
+// NewRedemption defines model for NewRedemption.
+type NewRedemption struct {
+	OccurredAt time.Time `json:"occurred_at"`
+	Points     int64     `json:"points"`
+	Ref        string    `json:"ref"`
+
+	// Reward what the points were redeemed for
+	Reward string `json:"reward"`
+}
+
 // NewTransaction defines model for NewTransaction.
 type NewTransaction struct {
 	AccountId string `json:"account_id"`
@@ -287,6 +315,19 @@ type NewTransaction struct {
 
 // NewTransactionKind earn adds points; spend subtracts (rejected if it would go below zero)
 type NewTransactionKind string
+
+// Redemption defines model for Redemption.
+type Redemption struct {
+	AccountId  string         `json:"account_id"`
+	Kind       RedemptionKind `json:"kind"`
+	OccurredAt time.Time      `json:"occurred_at"`
+	Points     int64          `json:"points"`
+	Ref        string         `json:"ref"`
+	Reward     string         `json:"reward"`
+}
+
+// RedemptionKind defines model for Redemption.Kind.
+type RedemptionKind string
 
 // TokenResponse defines model for TokenResponse.
 type TokenResponse struct {
@@ -340,6 +381,9 @@ type IngestBatchMultipartBody struct {
 // CreateAccountJSONRequestBody defines body for CreateAccount for application/json ContentType.
 type CreateAccountJSONRequestBody = NewAccount
 
+// RedeemPointsJSONRequestBody defines body for RedeemPoints for application/json ContentType.
+type RedeemPointsJSONRequestBody = NewRedemption
+
 // IngestBatchMultipartRequestBody defines body for IngestBatch for multipart/form-data ContentType.
 type IngestBatchMultipartRequestBody IngestBatchMultipartBody
 
@@ -363,6 +407,9 @@ type ServerInterface interface {
 	// Current balance for an account
 	// (GET /accounts/{account_id}/balance)
 	GetBalance(w http.ResponseWriter, r *http.Request, accountId string)
+	// Redeem points for a reward (member-own / admin-any); idempotent on ref
+	// (POST /accounts/{account_id}/redeem)
+	RedeemPoints(w http.ResponseWriter, r *http.Request, accountId string)
 	// List an account's transactions, newest-first (member-own / admin-any)
 	// (GET /accounts/{account_id}/transactions)
 	ListTransactions(w http.ResponseWriter, r *http.Request, accountId string)
@@ -408,6 +455,12 @@ func (_ Unimplemented) GetAccount(w http.ResponseWriter, r *http.Request, accoun
 // Current balance for an account
 // (GET /accounts/{account_id}/balance)
 func (_ Unimplemented) GetBalance(w http.ResponseWriter, r *http.Request, accountId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Redeem points for a reward (member-own / admin-any); idempotent on ref
+// (POST /accounts/{account_id}/redeem)
+func (_ Unimplemented) RedeemPoints(w http.ResponseWriter, r *http.Request, accountId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -551,6 +604,38 @@ func (siw *ServerInterfaceWrapper) GetBalance(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetBalance(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RedeemPoints operation middleware
+func (siw *ServerInterfaceWrapper) RedeemPoints(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", chi.URLParam(r, "account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RedeemPoints(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -823,6 +908,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/accounts/{account_id}/balance", wrapper.GetBalance)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/accounts/{account_id}/redeem", wrapper.RedeemPoints)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/accounts/{account_id}/transactions", wrapper.ListTransactions)
@@ -1125,6 +1213,113 @@ func (response GetBalance404JSONResponse) VisitGetBalanceResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPointsRequestObject struct {
+	AccountId string `json:"account_id"`
+	Body      *RedeemPointsJSONRequestBody
+}
+
+type RedeemPointsResponseObject interface {
+	VisitRedeemPointsResponse(w http.ResponseWriter) error
+}
+
+type RedeemPoints200JSONResponse Redemption
+
+func (response RedeemPoints200JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints201JSONResponse Redemption
+
+func (response RedeemPoints201JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints400JSONResponse Error
+
+func (response RedeemPoints400JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RedeemPoints401JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RedeemPoints403JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints404JSONResponse Error
+
+func (response RedeemPoints404JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemPoints409JSONResponse Error
+
+func (response RedeemPoints409JSONResponse) VisitRedeemPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1540,6 +1735,9 @@ type StrictServerInterface interface {
 	// Current balance for an account
 	// (GET /accounts/{account_id}/balance)
 	GetBalance(ctx context.Context, request GetBalanceRequestObject) (GetBalanceResponseObject, error)
+	// Redeem points for a reward (member-own / admin-any); idempotent on ref
+	// (POST /accounts/{account_id}/redeem)
+	RedeemPoints(ctx context.Context, request RedeemPointsRequestObject) (RedeemPointsResponseObject, error)
 	// List an account's transactions, newest-first (member-own / admin-any)
 	// (GET /accounts/{account_id}/transactions)
 	ListTransactions(ctx context.Context, request ListTransactionsRequestObject) (ListTransactionsResponseObject, error)
@@ -1689,6 +1887,39 @@ func (sh *strictHandler) GetBalance(w http.ResponseWriter, r *http.Request, acco
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetBalanceResponseObject); ok {
 		if err := validResponse.VisitGetBalanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RedeemPoints operation middleware
+func (sh *strictHandler) RedeemPoints(w http.ResponseWriter, r *http.Request, accountId string) {
+	var request RedeemPointsRequestObject
+
+	request.AccountId = accountId
+
+	var body RedeemPointsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RedeemPoints(ctx, request.(RedeemPointsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RedeemPoints")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RedeemPointsResponseObject); ok {
+		if err := validResponse.VisitRedeemPointsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

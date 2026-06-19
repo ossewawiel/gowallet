@@ -33,6 +33,7 @@ type Transaction struct {
 	AccountID  string
 	Kind       string
 	Points     int64
+	Reward     sql.NullString
 	OccurredAt string
 	CreatedAt  string
 }

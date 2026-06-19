@@ -39,11 +39,11 @@ final testing = every row here is green at once.
 | INV-21 | `GET /audit` is **admin-only** (member → 403) and returns each attempt's outcome + reason + timestamp | `TestListAudit_AdminOnly`, `TestListAudit_RecordsShape` | S4 | ✅ |
 | INV-22 | The audit log is **append-only**: the same `ref` recorded twice yields two distinct rows (no idempotency collision — opposite of the `transactions` table) | `TestAudit_AppendOnly_SameRefTwice` | S4 | ✅ |
 | INV-23 | Every **batch row** produces an audit entry with its outcome + reason (the batch HTTP path is wired end-to-end to the S4 audit writer) | `TestBatch_AuditsEachRow` | S5 | ✅ |
-| INV-24 | A **redeem** deducts points and counts against the balance (balance = Σearn − Σspend − Σredeem) | `TestRedeem_DeductsFromBalance` | S8 | ⬜ |
-| INV-25 | A redeem that would drive the balance **negative is rejected** (409) | `TestRedeem_BelowZero_Rejected` | S8 | ⬜ |
-| INV-26 | **Concurrent redeems** (and redeem-vs-spend races) never over-draw; final balance exact | `TestRedeem_ConcurrentNoOverdraw` (`-race`) | S8 | ⬜ |
-| INV-27 | Redeem is **member-own / admin-any** (cross-account member → 403); the `reward` is recorded + returned | `TestRedeem_MemberOwnOnly`, `TestRedeem_RecordsReward` | S8 | ⬜ |
-| INV-28 | A redeem is **idempotent on `ref`** — a replay returns the stored redemption, counted once | `TestRedeem_DuplicateRef_CountedOnce` | S8 | ⬜ |
+| INV-24 | A **redeem** deducts points and counts against the balance (balance = Σearn − Σspend − Σredeem) | `TestRedeem_DeductsFromBalance` | S8 | ✅ |
+| INV-25 | A redeem that would drive the balance **negative is rejected** (409) | `TestRedeem_BelowZero_Rejected` | S8 | ✅ |
+| INV-26 | **Concurrent redeems** (and redeem-vs-spend races) never over-draw; final balance exact | `TestRedeem_ConcurrentNoOverdraw` (`-race`) | S8 | ✅ |
+| INV-27 | Redeem is **member-own / admin-any** (cross-account member → 403); the `reward` is recorded + returned | `TestRedeem_MemberOwnOnly`, `TestRedeem_RecordsReward` | S8 | ✅ |
+| INV-28 | A redeem is **idempotent on `ref`** — a replay returns the stored redemption, counted once | `TestRedeem_DuplicateRef_CountedOnce` | S8 | ✅ |
 
 **Legend:** ⬜ planned · 🟡 test written (red) · ✅ proven (green in CI)
 

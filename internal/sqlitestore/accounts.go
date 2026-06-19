@@ -169,6 +169,7 @@ func (s *Store) RecordTransaction(ctx context.Context, t wallet.Transaction) (wa
 		AccountID:  t.AccountID,
 		Kind:       string(t.Kind),
 		Points:     t.Points,
+		Reward:     sql.NullString{String: t.Reward, Valid: t.Reward != ""},
 		OccurredAt: t.OccurredAt.UTC().Format(rfc3339),
 	})
 	if err != nil {
@@ -179,16 +180,17 @@ func (s *Store) RecordTransaction(ctx context.Context, t wallet.Transaction) (wa
 		return wallet.Transaction{}, false, fmt.Errorf("rows affected: %w", err)
 	}
 
-	// No-negative guard, baked into the SAME tx (INV-3/INV-4). On a FRESH spend
-	// insert (affected==1, kind==spend) the just-inserted row is already counted
-	// by BalanceForAccount; if that drives the balance below zero we roll back
-	// (undoing the insert) and report ErrInsufficientBalance — nothing persists.
-	// A replay (affected==0) skips the check: the first write already validated
-	// it (first-write-wins), so re-checking would be wrong and a wasted read.
-	// Earn can't go negative, so it skips the check too. The single writer
-	// serialises racing spends, so each sees every committed spend before it —
-	// two concurrent spends can't both pass a stale read.
-	if affected == 1 && t.Kind == wallet.KindSpend {
+	// No-negative guard, baked into the SAME tx (INV-3/INV-4/INV-25/INV-26). On a
+	// FRESH deduction insert (affected==1, kind==spend OR redeem) the just-inserted
+	// row is already counted by BalanceForAccount; if that drives the balance below
+	// zero we roll back (undoing the insert) and report ErrInsufficientBalance —
+	// nothing persists. A replay (affected==0) skips the check: the first write
+	// already validated it (first-write-wins), so re-checking would be wrong and a
+	// wasted read. Earn can't go negative, so it skips the check too. The single
+	// writer serialises racing deductions, so each sees every committed deduction
+	// before it — two concurrent deductions (spend/redeem) can't both pass a stale
+	// read.
+	if affected == 1 && (t.Kind == wallet.KindSpend || t.Kind == wallet.KindRedeem) {
 		bal, balErr := q.BalanceForAccount(ctx, t.AccountID)
 		if balErr != nil {
 			return wallet.Transaction{}, false, fmt.Errorf("balance check: %w", balErr)
@@ -218,6 +220,7 @@ func (s *Store) RecordTransaction(ctx context.Context, t wallet.Transaction) (wa
 		AccountID:  row.AccountID,
 		Kind:       wallet.Kind(row.Kind),
 		Points:     row.Points,
+		Reward:     row.Reward.String, // "" when NULL (earn/spend rows)
 		OccurredAt: occurred.UTC(),
 	}
 	return stored, affected == 1, nil
