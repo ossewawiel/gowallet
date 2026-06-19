@@ -200,10 +200,17 @@ type HealthDb string
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	AccountId string  `json:"account_id"`
+	Secret    *string `json:"secret,omitempty"`
+}
+
 // NewAccount defines model for NewAccount.
 type NewAccount struct {
-	AccountId string `json:"account_id"`
-	Name      string `json:"name"`
+	AccountId string  `json:"account_id"`
+	Name      string  `json:"name"`
+	Secret    *string `json:"secret,omitempty"`
 }
 
 // NewTransaction defines model for NewTransaction.
@@ -219,12 +226,6 @@ type NewTransaction struct {
 
 // NewTransactionKind earn adds points; spend subtracts (rejected if it would go below zero)
 type NewTransactionKind string
-
-// TokenRequest defines model for TokenRequest.
-type TokenRequest struct {
-	AccountId string `json:"account_id"`
-	Role      string `json:"role"`
-}
 
 // TokenResponse defines model for TokenResponse.
 type TokenResponse struct {
@@ -278,8 +279,8 @@ type CreateAccountJSONRequestBody = NewAccount
 // IngestBatchMultipartRequestBody defines body for IngestBatch for multipart/form-data ContentType.
 type IngestBatchMultipartRequestBody IngestBatchMultipartBody
 
-// IssueTokenJSONRequestBody defines body for IssueToken for application/json ContentType.
-type IssueTokenJSONRequestBody = TokenRequest
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
 
 // CreateTransactionJSONRequestBody defines body for CreateTransaction for application/json ContentType.
 type CreateTransactionJSONRequestBody = NewTransaction
@@ -304,9 +305,9 @@ type ServerInterface interface {
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
-	// Issue a signed HS256 JWT for an account_id + role (demo token mint).
-	// (POST /token)
-	IssueToken(w http.ResponseWriter, r *http.Request)
+	// Exchange account credentials for a signed HS256 JWT (role from the stored account).
+	// (POST /login)
+	Login(w http.ResponseWriter, r *http.Request)
 	// Record an earn transaction (idempotent on ref)
 	// (POST /transactions)
 	CreateTransaction(w http.ResponseWriter, r *http.Request)
@@ -352,9 +353,9 @@ func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Issue a signed HS256 JWT for an account_id + role (demo token mint).
-// (POST /token)
-func (_ Unimplemented) IssueToken(w http.ResponseWriter, r *http.Request) {
+// Exchange account credentials for a signed HS256 JWT (role from the stored account).
+// (POST /login)
+func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -530,11 +531,11 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
-// IssueToken operation middleware
-func (siw *ServerInterfaceWrapper) IssueToken(w http.ResponseWriter, r *http.Request) {
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.IssueToken(w, r)
+		siw.Handler.Login(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -696,7 +697,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/healthz", wrapper.GetHealth)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/token", wrapper.IssueToken)
+		r.Post(options.BaseURL+"/login", wrapper.Login)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/transactions", wrapper.CreateTransaction)
@@ -1102,17 +1103,17 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
-type IssueTokenRequestObject struct {
-	Body *IssueTokenJSONRequestBody
+type LoginRequestObject struct {
+	Body *LoginJSONRequestBody
 }
 
-type IssueTokenResponseObject interface {
-	VisitIssueTokenResponse(w http.ResponseWriter) error
+type LoginResponseObject interface {
+	VisitLoginResponse(w http.ResponseWriter) error
 }
 
-type IssueToken200JSONResponse TokenResponse
+type Login200JSONResponse TokenResponse
 
-func (response IssueToken200JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+func (response Login200JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1124,9 +1125,9 @@ func (response IssueToken200JSONResponse) VisitIssueTokenResponse(w http.Respons
 	return err
 }
 
-type IssueToken400JSONResponse Error
+type Login400JSONResponse Error
 
-func (response IssueToken400JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+func (response Login400JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1138,16 +1139,16 @@ func (response IssueToken400JSONResponse) VisitIssueTokenResponse(w http.Respons
 	return err
 }
 
-type IssueToken422JSONResponse Error
+type Login401JSONResponse Error
 
-func (response IssueToken422JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+func (response Login401JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1278,9 +1279,9 @@ type StrictServerInterface interface {
 	// Liveness + database readiness probe
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
-	// Issue a signed HS256 JWT for an account_id + role (demo token mint).
-	// (POST /token)
-	IssueToken(ctx context.Context, request IssueTokenRequestObject) (IssueTokenResponseObject, error)
+	// Exchange account credentials for a signed HS256 JWT (role from the stored account).
+	// (POST /login)
+	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
 	// Record an earn transaction (idempotent on ref)
 	// (POST /transactions)
 	CreateTransaction(ctx context.Context, request CreateTransactionRequestObject) (CreateTransactionResponseObject, error)
@@ -1479,11 +1480,11 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// IssueToken operation middleware
-func (sh *strictHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
-	var request IssueTokenRequestObject
+// Login operation middleware
+func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var request LoginRequestObject
 
-	var body IssueTokenJSONRequestBody
+	var body LoginJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -1491,18 +1492,18 @@ func (sh *strictHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.IssueToken(ctx, request.(IssueTokenRequestObject))
+		return sh.ssi.Login(ctx, request.(LoginRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "IssueToken")
+		handler = middleware(handler, "Login")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(IssueTokenResponseObject); ok {
-		if err := validResponse.VisitIssueTokenResponse(w); err != nil {
+	} else if validResponse, ok := response.(LoginResponseObject); ok {
+		if err := validResponse.VisitLoginResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

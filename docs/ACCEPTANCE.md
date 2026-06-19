@@ -29,10 +29,10 @@ final testing = every row here is green at once.
 | INV-11 | Every batch attempt is **audited** with reason + timestamp | `TestAudit_RecordsEachAttempt` | S4 | ✅ |
 | INV-12 | Algorithm is **pinned**: a token with `alg:none` or any non-HS256 algorithm is rejected (401) — defeats alg:none / RS↔HS confusion | `TestVerify_AlgNone_Rejected`, `TestVerify_NonHS256_Rejected`, `TestAuth_AlgConfusion_Rejected` | S3 | ✅ |
 | INV-13 | Identity is sourced from the **verified token only** — a body/URL `account_id` that disagrees never grants access | `TestAuth_IdentityFromTokenOnly` | S3 | ✅ |
-| INV-14 | Valid credential (`account_id` + correct `secret`) → 200 with a JWT whose `role` = the account's **stored** role | `TestLogin_ValidCredential_IssuesToken` | S6 | ⬜ |
-| INV-15 | Wrong **or** unknown credential → **401**, no token, secret never logged, **no user enumeration** (identical response) | `TestLogin_BadCredential_401`, `TestLogin_UnknownAccount_SameResponse` | S6 | ⬜ |
-| INV-16 | Issued `role` comes from the **stored account**, never the request — a member can't self-mint admin | `TestLogin_RoleFromStore_NotRequest` | S6 | ⬜ |
-| INV-17 | Secret is stored only as a **bcrypt hash** and is never returned in any response | `TestAccounts_SecretNeverReturned`, `TestStore_PasswordHashedNotPlaintext` | S6 | ⬜ |
+| INV-14 | Valid credential (`account_id` + correct `secret`) → 200 with a JWT whose `role` = the account's **stored** role | `TestLogin_ValidCredential_IssuesToken` | S6 | ✅ |
+| INV-15 | Wrong **or** unknown credential → **401**, no token, secret never logged, **no user enumeration** (identical response) | `TestLogin_BadCredential_401`, `TestLogin_UnknownAccount_SameResponse` | S6 | ✅ |
+| INV-16 | Issued `role` comes from the **stored account**, never the request — a member can't self-mint admin | `TestLogin_RoleFromStore_NotRequest` | S6 | ✅ |
+| INV-17 | Secret is stored only as a **bcrypt hash** and is never returned in any response | `TestAccounts_SecretNeverReturned`, `TestStore_PasswordHashedNotPlaintext` | S6 | ✅ |
 | INV-18 | `GET /accounts` (list all) is **admin-only** — a member gets **403** | `TestListAccounts_AdminOnly`, `TestListAccounts_Member_Forbidden` | S7 | ⬜ |
 | INV-19 | Transaction list is **account-scoped**: member sees **own only** (else 403), admin sees any | `TestListTransactions_MemberOwnOnly`, `TestListTransactions_AdminAny` | S7 | ⬜ |
 | INV-20 | Transaction list returns **only that account's** transactions (no cross-account leak), newest-first | `TestListTransactions_NoCrossAccountLeak` | S7 | ⬜ |

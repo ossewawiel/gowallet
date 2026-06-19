@@ -4,10 +4,16 @@
 
 package gen
 
+import (
+	"database/sql"
+)
+
 type Account struct {
-	AccountID string
-	Name      string
-	CreatedAt string
+	AccountID    string
+	Name         string
+	PasswordHash sql.NullString
+	Role         string
+	CreatedAt    string
 }
 
 type AuditLog struct {

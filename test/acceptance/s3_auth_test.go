@@ -1,34 +1,32 @@
 package acceptance_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/ossewawiel/gowallet/internal/httpapi"
+	"github.com/ossewawiel/gowallet/internal/wallet"
 )
 
-// mintToken asks POST /token for a signed JWT and returns the raw token.
-func mintToken(t *testing.T, base, accountID, role string) string {
+// mintToken signs a JWT IN-PROCESS for an arbitrary identity using the same
+// secret the booted test app verifies with. There is no HTTP mint endpoint any
+// more (S6 removed POST /token), so tests forge tokens directly via the
+// exported package signer — exactly what the real /login path calls after a
+// credential check. base is unused now but kept so callers stay unchanged.
+func mintToken(t *testing.T, _ /*base*/, accountID, role string) string {
 	t.Helper()
-	resp := postJSON(t, base+"/token", map[string]any{"account_id": accountID, "role": role})
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /token (%s/%s): want 200, got %d", accountID, role, resp.StatusCode)
+	r, err := wallet.ParseRole(role)
+	if err != nil {
+		t.Fatalf("mintToken: bad role %q: %v", role, err)
 	}
-	var body struct {
-		Token     string `json:"token"`
-		TokenType string `json:"token_type"`
-		ExpiresIn int    `json:"expires_in"`
+	tok, err := httpapi.IssueToken(acceptanceSecret, time.Hour, wallet.Identity{AccountID: accountID, Role: r})
+	if err != nil {
+		t.Fatalf("mintToken: %v", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode token response: %v", err)
-	}
-	if body.Token == "" || body.TokenType != "Bearer" || body.ExpiresIn <= 0 {
-		t.Fatalf("token response malformed: %+v", body)
-	}
-	return body.Token
+	return tok
 }
 
 // authGet performs GET base+path with the given bearer token.
@@ -48,7 +46,8 @@ func authGet(t *testing.T, base, path, token string) *http.Response {
 	return resp
 }
 
-// TestToken_IssuesUsableJWT: a token from /token is accepted on a protected route.
+// TestToken_IssuesUsableJWT: an in-process-minted token is accepted on a
+// protected route (the same token shape /login issues after a credential check).
 func TestToken_IssuesUsableJWT(t *testing.T) {
 	srv := bootRealApp(t)
 	createAccount(t, srv.URL, "member-1")
@@ -58,16 +57,6 @@ func TestToken_IssuesUsableJWT(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("protected route with issued token: want 200, got %d", resp.StatusCode)
-	}
-}
-
-// TestToken_UnknownRole_422: a well-formed body with a bad role is 422.
-func TestToken_UnknownRole_422(t *testing.T) {
-	srv := bootRealApp(t)
-	resp := postJSON(t, srv.URL+"/token", map[string]any{"account_id": "x", "role": "wizard"})
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("unknown role: want 422, got %d", resp.StatusCode)
 	}
 }
 

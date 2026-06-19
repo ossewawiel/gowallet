@@ -149,16 +149,16 @@ go test -race ./...
 
 ### 🧪 Schemathesis MUST run with a Bearer token (the standardised recipe)
 Almost every route is `bearerAuth`-protected, so a token-less `schemathesis run` drowns in false
-401s. **Always** boot the server with a known secret, mint an **admin** token via `/token`, and pass
-it as a header. Admin can act on any account, so it exercises every operation.
+401s. **Always** boot the server with a known secret, log in as the seeded **admin** via `/login`,
+and pass the token as a header. Admin can act on any account, so it exercises every operation.
 
 ```powershell
 $env:PYTHONUTF8 = "1"
 $env:GOWALLET_JWT_SECRET = "schemathesis-secret"   # any non-empty value; boot fails without it
-# 1) boot the server (background), wait for /healthz
-# 2) mint an admin token:
-$body = @{ account_id = "test-admin"; role = "admin" } | ConvertTo-Json
-$tok  = (Invoke-RestMethod "http://localhost:8080/token" -Method Post -Body $body -ContentType "application/json").token
+# 1) boot the server (background), wait for /healthz — the S6 migration seeds admin-001
+# 2) log in as the seeded admin (creds are seeded by the migration, no mint endpoint exists):
+$body = @{ account_id = "admin-001"; secret = "demo-admin-pw" } | ConvertTo-Json
+$tok  = (Invoke-RestMethod "http://localhost:8080/login" -Method Post -Body $body -ContentType "application/json").token
 # 3) run against the SERVED spec, with the token on every request:
 schemathesis run "http://localhost:8080/openapi.yaml" -u "http://localhost:8080" `
   -H "Authorization: Bearer $tok" `
@@ -171,11 +171,13 @@ schemathesis run "http://localhost:8080/openapi.yaml" -u "http://localhost:8080"
 >
 > | Operation | Check that flags it | Why it's expected |
 > |-----------|---------------------|-------------------|
-> | `POST /token` → `422` | `negative_data_rejection` | `role` is validated **semantically** (unknown role → 422), not as a schema enum — deliberate (see the spec comment on `TokenRequest.role`). |
+> | `POST /login` → `401` | `positive_data_acceptance` | `/login`'s `secret` is just `format`-free text; Schemathesis generates a **random** account_id + secret and expects 2xx. Random creds never match a stored bcrypt hash, so the **documented `401 invalid_credentials`** is correct — not a server error. Covered by the existing `--exclude-checks positive_data_acceptance`. |
 > | `POST /batch` → `400` | `positive_data_acceptance` | The `file` part is just `format: binary`; Schemathesis generates an **empty / headerless** file and expects 2xx. An absent/unrecognised CSV header is a **documented `400`** for `/batch` (S5) — a broken *upload*, not a server error. Loosening this would mean accepting headerless uploads. |
 >
-> The two `--exclude-checks` flags trim exactly these two generative checks. All structural checks
-> (`status_code_conformance`, `response_schema_conformance`, etc.) stay **live** and must pass for
-> every operation, `/batch` included. Schemathesis may also print a non-fatal **WARNING** ("schema
-> validation mismatch" on `/accounts`, `/batch`, `/token`) — that's the same stricter-than-schema
-> story surfaced as a warning, **not** a failure (exit code stays `0`).
+> The two `--exclude-checks` flags trim exactly these two generative checks (both are
+> `positive_data_acceptance`; `negative_data_rejection` is kept excluded only if Schemathesis still
+> trips it elsewhere). All structural checks (`status_code_conformance`, `response_schema_conformance`,
+> etc.) stay **live** and must pass for every operation, `/batch` and `/login` included. Schemathesis
+> may also print a non-fatal **WARNING** ("schema validation mismatch" on `/accounts`, `/batch`,
+> `/login`) — that's the same stricter-than-schema story surfaced as a warning, **not** a failure
+> (exit code stays `0`).

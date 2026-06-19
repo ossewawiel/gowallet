@@ -13,33 +13,31 @@ security:
   - bearerAuth: []
 
 paths:
-  /token:
+  /login:
     post:
-      operationId: issueToken
-      summary: Issue a signed HS256 JWT for an account_id + role (demo token mint).
+      operationId: login
+      summary: Exchange account credentials for a signed HS256 JWT (role from the stored account).
       tags: [auth]
-      security: []
+      security: []          # public — you can't require a token to get a token
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TokenRequest' }
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: A signed Bearer token.
+          description: Authenticated — a signed Bearer token whose role is the stored account's role.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenResponse' }
         '400':
           description: Malformed JSON body.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: Well-formed but invalid (e.g. unknown role).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401':
+          description: >
+            Invalid credentials. Returned IDENTICALLY for a wrong secret AND an unknown account —
+            the body never reveals which, so accounts can't be enumerated.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /healthz:
     get:
@@ -230,16 +228,13 @@ components:
         HS256-signed JWT. Carries `sub` (account_id) + `role` (member|admin). The server pins the
         algorithm to HS256 on verify (kills alg:none / RS↔HS confusion).
   schemas:
-    TokenRequest:
+    LoginRequest:
       type: object
       additionalProperties: false
-      required: [account_id, role]
+      required: [account_id, secret]
       properties:
-        account_id: { type: string, minLength: 1, example: member-123 }
-        # role is validated semantically by the handler (unknown → 422), not as a
-        # schema enum — a well-formed-but-unknown role is "unprocessable", not a
-        # malformed body. Allowed values are member | admin.
-        role:       { type: string, minLength: 1, example: member }
+        account_id: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$', example: member-123 }
+        secret:     { type: string, minLength: 1, writeOnly: true, example: demo-member-pw }
     TokenResponse:
       type: object
       additionalProperties: false
@@ -255,6 +250,9 @@ components:
       properties:
         account_id: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+$', example: member-123 }
         name:       { type: string, minLength: 1, example: Rina }
+        # Optional login secret. If omitted, the account exists but can't log in.
+        # role is NEVER accepted here — new accounts are always 'member' (admin is seed-only).
+        secret:     { type: string, minLength: 1, writeOnly: true, example: s3cr3t }
     Account:
       type: object
       additionalProperties: false
