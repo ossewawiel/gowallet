@@ -80,6 +80,7 @@ returns the **same JSON error envelope** (`{ "error": { code, message, request_i
 | `GET /accounts/{id}/balance` | 🧍 own / admin | current balance (live Σ earn − Σ spend) |
 | `GET /accounts/{id}/transactions` | 🧍 own / admin | that account's ledger, **newest-first** |
 | `POST /transactions` | 🧍 own / admin | record an **earn**/**spend** (idempotent on `ref`) |
+| 🔜 `POST /accounts/{id}/redeem` | 🧍 own / admin | **(S8 — planned)** redeem points for a reward — deducts, counts against balance |
 | `POST /batch` | 🛡️ admin | ingest a CSV → `{processed, accepted, rejected, duplicates}` |
 | `GET /audit` | 🛡️ admin | the audit log, newest-first (optional `?account_id=`) |
 | `GET /openapi.yaml`, `GET /swagger` | 🌍 public | the live contract + Swagger UI |
@@ -99,7 +100,8 @@ Correctness is pinned from **two angles** so nothing slips between them:
 | **Invariants** | business rules, **concurrency**, no wire-crossing | **Go `testing` + `-race`** | `go test -race ./...` |
 
 The business invariants (idempotency, no-overdraw, no cross-user leak) live in a named registry —
-[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — where each `INV-n` maps to a test. **All 23 are green.**
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) — where each `INV-n` maps to a test. **All 23 are green** —
+`INV-24–28` are queued for the redeem slice (S8).
 
 ```bash
 CGO_ENABLED=1 go test -race ./...     # -race needs cgo + a real gcc (e.g. MinGW) on the PATH

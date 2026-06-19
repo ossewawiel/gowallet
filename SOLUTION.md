@@ -29,10 +29,12 @@ SQL-level guards that can't be torn apart by concurrency. It was built in delibe
 | **S5** | CSV batch ingestion — admin `POST /batch` + summary | ✅ built |
 | **S6** | Login — credential-based `POST /login` (bcrypt-hashed secrets, role from store) | ✅ built |
 | **S7** | Listings — `GET /accounts`, `GET /accounts/{id}/transactions` | ✅ built |
+| **S8** | Redeem — member `POST /accounts/{id}/redeem` for a reward (deducts, counts against balance) | 📋 specced (issue #19) |
 
 **S0–S7 are all built** — accounts, earn, spend, auth, audit, CSV batch ingestion, real
-credential login, **and the read/collection listings**. The core slice backlog is now fully
-shipped; what's left is hardening/polish (see [`docs/SLICES.md`](docs/SLICES.md)).
+credential login, **and the read/collection listings**. The next feature slice is **S8 (redeem)** —
+member point-redemption for a reward ([issue #19](https://github.com/ossewawiel/gowallet/issues/19)),
+fully specced in [`docs/slices/`](docs/slices/).
 
 ---
 

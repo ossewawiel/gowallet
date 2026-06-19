@@ -35,6 +35,7 @@ issue. Then `/build-slice <issue#>` builds it with strict TDD.
 | 🏁 | S5 · CSV batch ingestion | [S5.md](S5.md) | [#6](https://github.com/ossewawiel/gowallet/issues/6) | 🅲 | S2 + S4 |
 | ⏩ | S6 · Login (credential token) | [S6.md](S6.md) | [#10](https://github.com/ossewawiel/gowallet/issues/10) | 🅱️ | S1 + S3 |
 | ⏩ | S7 · Listings (accounts + transactions) | [S7.md](S7.md) | [#13](https://github.com/ossewawiel/gowallet/issues/13) | 🅰️ | S1 + S3 |
+| ⏩ | S8 · Redeem (member redemption) | [S8.md](S8.md) | [#19](https://github.com/ossewawiel/gowallet/issues/19) | 🅰️ | S1 + S2 + S3 |
 
 ---
 
@@ -44,7 +45,7 @@ issue. Then `/build-slice <issue#>` builds it with strict TDD.
  STEP 1 (serial):   S0 (#1)  ← do this first, alone — everything depends on it
 
  STEP 2 (fan out — up to 3 fresh sessions at once):
-   🅰️ spine      S1 (#2) ──▶ S2 (#3) ──▶ S7 (#13 listings)
+   🅰️ spine      S1 (#2) ──▶ S2 (#3) ──▶ S7 (#13) ──▶ S8 (#19 redeem)
    🅱️ security   S3 (#4) ──▶ S6 (#10) ← S3 auth (after S0); then S6 login (needs S1 + S3)
    🅲 ingestion  S4 (#5 +GET /audit) ──▶ S5 (#6)  ← S5 waits for S2 (#3) AND S4 (#5)
 

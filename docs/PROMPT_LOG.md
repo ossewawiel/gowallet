@@ -891,4 +891,24 @@ the walking skeleton, via `/design-slice`).
 - 🔗 **Artifacts:** branch `slice/s7-listings`, [issue **#13**](https://github.com/ossewawiel/gowallet/issues/13).
   **INV-18 / INV-19 / INV-20** now ✅ proven in `docs/ACCEPTANCE.md`.
 
+### ⏱️ 2026-06-19 · Entry 31 — S8 added: member point redemption
+
+- 🧑 **Asked:** There's no way for a member to **redeem** wallet points — add it as a slice and update
+  all the docs.
+- 🔎 **Explored:** Redeem vs the existing spend — a member *can* deduct via spend, but there's no
+  member-facing "cash in points for a reward" concept. Options weighed: redeem + reward reference ·
+  rewards catalog · redeem-as-spend-alias.
+- ✅ **Accepted:** **redeem + reward reference** (user's call) — new slice **S8**:
+  `POST /accounts/{id}/redeem` (member-own / admin-any), a new `kind=redeem` that **counts against the
+  balance**, carrying a `reward` reference. Reuses the S2 atomic no-negative guard + `ref` idempotency.
+- ❌ **Rejected:** a full rewards catalog (scope creep) · aliasing redeem to spend (loses the reward
+  semantics the user wanted).
+- 🤖 **Did:** Wrote `docs/slices/S8.md`, opened **issue #19** (`slice,stream-a`), registered
+  **INV-24–28** in `ACCEPTANCE.md`, added S8 to `SLICES.md` + the slice index, added a 🔜 planned row
+  to the README API table, and marked S8 planned in `SOLUTION.md`.
+- 💡 **Why / the one real cost:** balance widens to `Σearn − Σspend − Σredeem`, and SQLite can't ALTER
+  a CHECK — so widening `kind` is a table-rebuild migration. Everything else reuses S1/S2/S3.
+- 🔗 **Artifacts:** docs/slices/S8.md · GitHub issue #19 · ACCEPTANCE INV-24–28 · SLICES.md ·
+  docs/slices/README.md · README.md · SOLUTION.md.
+
 <!-- New entries go below this line -->
