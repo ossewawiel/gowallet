@@ -1,0 +1,10 @@
+ref,account_id,kind,points,occurred_at
+seed-001,member-123,earn,150,2026-06-19T09:00:00Z
+seed-002,member-123,earn,200,2026-06-19T09:05:00Z
+seed-003,member-123,earn,75,2026-06-19T09:10:00Z
+seed-004,member-123,spend,50,2026-06-19T09:15:00Z
+seed-005,member-123,earn,300,2026-06-19T09:20:00Z
+seed-006,member-123,spend,120,2026-06-19T09:25:00Z
+seed-007,member-123,earn,90,2026-06-19T09:30:00Z
+seed-008,admin-001,earn,500,2026-06-19T09:35:00Z
+seed-009,member-777,earn,250,2026-06-19T09:40:00Z

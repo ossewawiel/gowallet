@@ -186,26 +186,37 @@ curl -s localhost:8080/accounts/member-777/transactions -H "Authorization: Beare
 
 ## 7. 📥 CSV batch ingest (admin)
 
-`POST /batch` takes a `multipart/form-data` file. **Rejected rows are data, not errors** — they're
-tallied in the summary; only a broken *upload* (missing/headerless file) is a `400`.
+`POST /batch` takes a `multipart/form-data` file (header `ref,account_id,kind,points,occurred_at`).
+**Rejected rows are data, not errors** — they're tallied in the summary; only a broken *upload*
+(missing/headerless file) is a `400`.
+
+A ready-made fixture lives at **[`testdata/batch-member-123.csv`](../testdata/batch-member-123.csv)** —
+7 rows against `member-123` (5 earns + 2 spends, net **+645**, never overdrawing) plus one for
+`admin-001` and one for `member-777`:
 
 ```bash
-cat > /tmp/batch.csv <<'CSV'
-ref,account_id,kind,points,occurred_at
-b-001,member-777,earn,200,2026-06-19T11:00:00Z
-b-002,member-777,spend,50,2026-06-19T11:01:00Z
-b-001,member-777,earn,200,2026-06-19T11:00:00Z
-b-003,ghost-acct,earn,10,2026-06-19T11:02:00Z
-CSV
-
 curl -s -X POST localhost:8080/batch \
-  -H "Authorization: Bearer $ADMIN_TOK" -F "file=@/tmp/batch.csv"
-# → { "processed":4, "accepted":2, "rejected":1, "duplicates":1 }
-#     accepted: b-001,b-002 · duplicate: b-001 (replay) · rejected: b-003 (unknown account)
+  -H "Authorization: Bearer $ADMIN_TOK" -F "file=@testdata/batch-member-123.csv"
+# fresh DB (member-777 not created):
+# → { "processed":9, "accepted":8, "rejected":1, "duplicates":0 }
+#     rejected: seed-009 (member-777 doesn't exist yet — see note)
 ```
 
-Re-uploading the **same file** is safe — every `ref` is already seen, so it's all `duplicates`, no
-double-count.
+> 💡 `member-777` is **not** a seeded account — on a fresh DB its row is tallied as `rejected`
+> (unknown account). Create it first (step 3 above) and it's accepted instead. `admin-001` and
+> `member-123` are seeded, so their rows always land.
+
+Re-uploading the **same file** is safe — every `ref` is already seen, so it comes back all
+`duplicates`, no double-count:
+
+```bash
+curl -s -X POST localhost:8080/batch \
+  -H "Authorization: Bearer $ADMIN_TOK" -F "file=@testdata/batch-member-123.csv"
+# → { "processed":9, "accepted":0, "rejected":1, "duplicates":8 }
+
+curl -s localhost:8080/accounts/member-123/balance -H "Authorization: Bearer $ADMIN_TOK"
+# → { "account_id":"member-123", "balance":645 }   (unchanged by the reprocess)
+```
 
 ---
 
