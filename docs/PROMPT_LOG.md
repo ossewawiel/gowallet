@@ -834,4 +834,61 @@ the walking skeleton, via `/design-slice`).
   `internal/sqlitestore/migrations/20260619090000_s6_account_credentials.sql` · new files
   `internal/httpapi/login.go`, `internal/wallet/login_test.go`, `test/acceptance/s6_login_test.go`.
 
+### ⏱️ 2026-06-19 · Entry 29 — S7 (Listings: accounts + transactions) **designed** (no code yet)
+
+- 🧑 **Asked:** Run `/design-slice S7 — Listings (accounts + transactions)`. Add the read/collection
+  endpoints: **`GET /accounts`** (admin-only list, each row carrying a derived balance) and
+  **`GET /accounts/{account_id}/transactions`** (per-account ledger, newest-first; member sees own,
+  admin sees any; **404** if the account is missing). No pagination — demo scale.
+- 🔎 **Explored — the design calls:**
+  - **Reuse the gates, don't reinvent them.** `/accounts` reuses **`requireAdmin`** (same gate as
+    `GET /audit`); the ledger reuses **`authorizeTarget`/`wallet.Authorize`** (same gate as
+    `GET /accounts/{id}/balance`). Identity always comes from the **verified token**, never the URL.
+  - **Ledger response shape:** chose a dedicated **`LedgerEntry`** `{ref, kind, points, occurred_at}`
+    over reusing the existing `Transaction` schema. 💡 `account_id` is redundant in a per-account list,
+    and those 4 fields are exactly the brief's shape.
+  - **Balance can't drift:** the account-list balance uses the **same Σ(earn)−Σ(spend)** formula as
+    `BalanceForAccount`, via a correlated subquery — so a list row can never disagree with `GET /balance`.
+  - **Ordering:** newest-first by **`id DESC`** (strictly-monotonic AUTOINCREMENT), stable even when
+    two rows share an `occurred_at`.
+  - **Existence honesty:** the ledger handler **authorizes before** touching the store — a cross-account
+    member gets **403** (not a 404 that would leak existence); an admin hitting a ghost account gets the
+    honest **404**.
+- 🤖 **Did:** Enriched **GitHub issue #13** with the full design — OpenAPI fragment (new `GET /accounts`
+  + `GET /accounts/{account_id}/transactions`; schemas `AccountSummary` / `AccountList` / `LedgerEntry`
+  / `TransactionList`), two new sqlc queries (**`ListAccountsWithBalance`**, **`ListTransactionsByAccount`**),
+  the wallet/store/handler plan, and the red-test list.
+- ✅ **Decisions accepted:**
+  - **No new migration** — reads only, over existing tables; the ledger query rides the existing
+    `idx_transactions_account` index.
+  - **No new sentinel errors** — reuse `ErrForbidden` / `ErrNotFound`.
+- 💡 **Why:** S7 is a vertical slice over the **existing** data model. The access gates and the balance
+  formula already exist, so this lands as wiring + two queries + two spec paths — no schema churn.
+- 🔗 **Artifacts:** [issue **#13**](https://github.com/ossewawiel/gowallet/issues/13). Invariants
+  **INV-18 / INV-19 / INV-20** (already registered ⬜ planned in `docs/ACCEPTANCE.md`).
+
+### ⏱️ 2026-06-19 · Entry 30 — S7 built (Listings: accounts + transactions, red→green→quality-gate) ✅
+
+- 🧑 **Asked:** Run `/build-slice 13` — build **S7 (Listings)** with strict spec-first TDD.
+- 🤖 **Did — spec-first, then red→green:**
+  - **Spec leads:** added **`GET /accounts`** + **`GET /accounts/{account_id}/transactions`** plus the
+    schemas **`AccountSummary`** / **`AccountList`** / **`LedgerEntry`** / **`TransactionList`** to
+    `api/openapi.yaml`, then regenerated with **oapi-codegen**.
+  - **Store/queries (no migration):** added the **`ListAccountsWithBalance`** + **`ListTransactionsByAccount`**
+    sqlc queries — pure reads over the existing `accounts` + `transactions` tables.
+  - **Domain + wiring:** added **`wallet.AccountSummary`** and **`ListAccounts`** / **`ListTransactions`**
+    on the repo interface, the service, and the store; wired the **`ListAccounts`** (`requireAdmin`) +
+    **`ListTransactions`** (`authorizeTarget`, **authorize-before-store**) handlers.
+  - **Tests first:** wrote **7 acceptance tests + 3 wallet unit tests** (red), then made them green.
+- ✅ **Quality gate — all green:** gofmt ✓ · go vet ✓ · golangci-lint **0 issues** ✓ · go build ✓ ·
+  `go test -race` (**10 new S7 tests** pass) ✓ · **Schemathesis exit 0** — **10/10 operations**;
+  Examples / Coverage / Fuzzing / Stateful all pass, **924 stateful scenarios** (only the
+  known/accepted *stricter-than-schema* WARNING on `/accounts`, `/batch`, `/login` — a warning, not a
+  failure) ✓.
+- 💡 **Why pure reuse:** the access gates (**`requireAdmin`**, **`authorizeTarget`**) and the
+  Σ(earn)−Σ(spend) balance formula already existed, so S7 was **wiring + two read queries + two spec
+  paths** — no new migration, no new sentinel errors.
+- 🔗 **Artifacts:** branch `slice/s7-listings`, [issue **#13**](https://github.com/ossewawiel/gowallet/issues/13).
+  **INV-18 / INV-19 / INV-20** now ✅ proven in `docs/ACCEPTANCE.md`.
+
 <!-- New entries go below this line -->

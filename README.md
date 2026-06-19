@@ -5,7 +5,7 @@
 > Written in **Go**, persisted in **SQLite**.
 
 <p align="left">
-  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S6%20landed-blue">
+  <img alt="status" src="https://img.shields.io/badge/status-step%203%3A%20S7%20landed%20(S0%E2%80%93S7%20shipped)-blue">
   <img alt="go" src="https://img.shields.io/badge/Go-1.26.4-00ADD8">
   <img alt="db" src="https://img.shields.io/badge/SQLite-pure--Go%20(modernc)-003B57">
   <img alt="tests" src="https://img.shields.io/badge/tests-strict%20TDD-brightgreen">
@@ -77,10 +77,19 @@
     (see **🔑 Test credentials** below). **INV-14..17 proven**; full quality gate green (gofmt · vet ·
     lint **0 issues** · build · `-race` · Schemathesis **6303 cases / 0 failures**, admin token via
     `/login`). On branch `slice/s6-login`.
-  - ➡️ **Next:** one slice remains —
-    - 🅰️ **S7 — Listings** ([#13](https://github.com/ossewawiel/gowallet/issues/13)):
-      `GET /accounts` (admin) + `GET /accounts/{id}/transactions` (own/admin). (S4 already exposes the
-      admin-only `GET /audit`.)
+  - ✅ **[S7 / #13](https://github.com/ossewawiel/gowallet/issues/13)** — listings **built & green**:
+    an admin-only **`GET /accounts`** (every account with its derived balance) + a per-account
+    **`GET /accounts/{id}/transactions`** ledger (newest-first via `id DESC`; member-own / admin-any;
+    **404** on a ghost account). **Pure reuse, no migration** — reads over the existing `accounts` +
+    `transactions` tables via two new sqlc queries (`ListAccountsWithBalance` reuses the exact
+    Σ(earn)−Σ(spend) balance formula; `ListTransactionsByAccount` rides the existing
+    `idx_transactions_account` index). The ledger **authorizes before** hitting the store, so a
+    cross-account member gets **403** (no existence leak), an admin on a ghost gets an honest **404**.
+    **INV-18/19/20 proven**; full quality gate green (gofmt · vet · lint **0 issues** · build ·
+    `-race` (10 new tests) · Schemathesis exit 0 — 10/10 operations, 924 stateful scenarios). On
+    branch `slice/s7-listings`. 🎉 **All core slices S0–S7 are now shipped.**
+  - ➡️ **Next:** the core backlog (S0–S7) is fully landed — remaining work is hardening/polish
+    (pagination, overflow handling, the Postgres-swap path). See [`docs/SLICES.md`](docs/SLICES.md).
 
 > 🔎 Full blow-by-blow — every prompt, decision, trade-off — in
 > [`docs/PROMPT_LOG.md`](docs/PROMPT_LOG.md); design rationale in [`SOLUTION.md`](SOLUTION.md).

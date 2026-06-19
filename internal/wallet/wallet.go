@@ -68,6 +68,15 @@ type Transaction struct {
 	OccurredAt time.Time
 }
 
+// AccountSummary is one row of GET /accounts — an account plus its derived
+// balance. It carries the role so the admin overview can show who's an admin.
+type AccountSummary struct {
+	ID      string
+	Name    string
+	Role    Role
+	Balance int64
+}
+
 // AccountRepository is the wallet core's view of account persistence.
 // sqlitestore implements it; httpapi never sees the implementation.
 type AccountRepository interface {
@@ -79,6 +88,14 @@ type AccountRepository interface {
 	// GetCredential returns the stored bcrypt hash + role for a login check. A
 	// NULL hash comes back as "". ErrNotFound if the account is absent.
 	GetCredential(ctx context.Context, id string) (hash string, role Role, err error)
+	// ListAccounts returns every account with its derived balance (Σ earn −
+	// Σ spend) — the SAME formula as Balance, so the list can't drift from
+	// GET /balance. Ordered by account_id for a stable listing.
+	ListAccounts(ctx context.Context) ([]AccountSummary, error)
+	// ListTransactions returns the account's ledger newest-first. ErrNotFound if
+	// the account does not exist (checked before listing, so a member's
+	// cross-account 403 never leaks existence and an admin's ghost surfaces 404).
+	ListTransactions(ctx context.Context, accountID string) ([]Transaction, error)
 }
 
 // TransactionRepository records transactions idempotently.
@@ -156,6 +173,21 @@ func (s *WalletService) GetAccount(ctx context.Context, id string) (Account, err
 // account does not exist.
 func (s *WalletService) Balance(ctx context.Context, id string) (int64, error) {
 	return s.accounts.Balance(ctx, id)
+}
+
+// ListAccounts returns every account with its derived balance (admin overview).
+// Thin pass-through: the admin-only access gate lives in the handler, exactly
+// like Balance/GetAccount.
+func (s *WalletService) ListAccounts(ctx context.Context) ([]AccountSummary, error) {
+	return s.accounts.ListAccounts(ctx)
+}
+
+// ListTransactions returns an account's ledger newest-first. ErrNotFound if the
+// account is absent. Thin pass-through: the member-own/admin-any gate lives in
+// the handler (it must run BEFORE this, so a cross-account member gets 403, not
+// a 404 that would leak whether the account exists).
+func (s *WalletService) ListTransactions(ctx context.Context, accountID string) ([]Transaction, error) {
+	return s.accounts.ListTransactions(ctx, accountID)
 }
 
 // RecordEarn records an earn transaction. It forces Kind=earn, delegates to the

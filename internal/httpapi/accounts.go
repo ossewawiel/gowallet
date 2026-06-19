@@ -81,6 +81,61 @@ func (s *server) GetBalance(w http.ResponseWriter, r *http.Request, accountID st
 	writeJSON(w, http.StatusOK, gen.Balance{AccountId: id, Balance: bal})
 }
 
+// ListAccounts handles GET /accounts → 200 (admin) with every account + its
+// derived balance, or 403 for a member. Admin-only: it reuses requireAdmin, the
+// same gate as GET /audit — the spec's bearerAuth can't express a role, so the
+// enforcement lives here.
+func (s *server) ListAccounts(w http.ResponseWriter, r *http.Request) {
+	if err := requireAdmin(r); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	summaries, err := s.wallet.ListAccounts(r.Context())
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	out := make(gen.AccountList, 0, len(summaries))
+	for _, a := range summaries {
+		out = append(out, gen.AccountSummary{
+			AccountId: a.ID,
+			Name:      a.Name,
+			Role:      gen.AccountSummaryRole(a.Role),
+			Balance:   a.Balance,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListTransactions handles GET /accounts/{id}/transactions → 200 (member-own /
+// admin-any) with the ledger newest-first, 403 cross-account member, 404 ghost.
+// It authorizes BEFORE touching the store (reusing authorizeTarget, the same
+// gate as GET /balance): a member asking for someone else's ledger gets 403, not
+// a 404 that would confirm/deny the account exists. Admin passes the gate, so a
+// ghost account surfaces the honest 404 from the store.
+func (s *server) ListTransactions(w http.ResponseWriter, r *http.Request, accountID string) {
+	id, err := authorizeTarget(r, accountID)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	txns, err := s.wallet.ListTransactions(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	out := make(gen.TransactionList, 0, len(txns))
+	for _, t := range txns {
+		out = append(out, gen.LedgerEntry{
+			Ref:        t.Ref,
+			Kind:       gen.LedgerEntryKind(t.Kind),
+			Points:     t.Points,
+			OccurredAt: t.OccurredAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // CreateTransaction handles POST /transactions → 201 (new earn) / 200
 // (idempotent replay) / 404 (unknown account) / 400 (bad body or kind≠earn).
 func (s *server) CreateTransaction(w http.ResponseWriter, r *http.Request) {

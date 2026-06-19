@@ -88,6 +88,60 @@ func (s *Store) Balance(ctx context.Context, id string) (int64, error) {
 	return bal, nil
 }
 
+// ListAccounts returns every account with its derived balance (Σ earn − Σ spend),
+// computed by the SAME correlated subquery as BalanceForAccount so the list can
+// never drift from GET /balance. Ordered by account_id.
+func (s *Store) ListAccounts(ctx context.Context) ([]wallet.AccountSummary, error) {
+	rows, err := s.queries().ListAccountsWithBalance(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts: %w", err)
+	}
+	out := make([]wallet.AccountSummary, 0, len(rows))
+	for _, row := range rows {
+		role, perr := wallet.ParseRole(row.Role)
+		if perr != nil {
+			return nil, fmt.Errorf("stored role %q: %w", row.Role, perr)
+		}
+		out = append(out, wallet.AccountSummary{
+			ID:      row.AccountID,
+			Name:    row.Name,
+			Role:    role,
+			Balance: row.Balance,
+		})
+	}
+	return out, nil
+}
+
+// ListTransactions returns the account's ledger newest-first. It confirms the
+// account exists first (→ wallet.ErrNotFound, mirroring Balance) so a missing
+// account is an honest 404, distinct from an empty ledger.
+func (s *Store) ListTransactions(ctx context.Context, accountID string) ([]wallet.Transaction, error) {
+	q := s.queries()
+	exists, err := q.AccountExists(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("account exists: %w", err)
+	}
+	if !exists {
+		return nil, wallet.ErrNotFound
+	}
+	rows, err := q.ListTransactionsByAccount(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions: %w", err)
+	}
+	out := make([]wallet.Transaction, 0, len(rows))
+	for _, row := range rows {
+		occurred, _ := time.Parse(rfc3339, row.OccurredAt)
+		out = append(out, wallet.Transaction{
+			Ref:        row.Ref,
+			AccountID:  accountID,
+			Kind:       wallet.Kind(row.Kind),
+			Points:     row.Points,
+			OccurredAt: occurred.UTC(),
+		})
+	}
+	return out, nil
+}
+
 // RecordTransaction inserts-or-replays atomically in ONE sql.Tx. It confirms
 // the account exists (→ ErrNotFound), then INSERT ... ON CONFLICT(ref) DO
 // NOTHING. RowsAffected==1 ⇒ created; ==0 ⇒ replay → SELECT the stored row.

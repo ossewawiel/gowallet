@@ -29,6 +29,25 @@ SELECT CAST(COALESCE(SUM(CASE WHEN kind = 'earn' THEN points ELSE -points END), 
 FROM transactions
 WHERE account_id = ?;
 
+-- name: ListAccountsWithBalance :many
+-- Each account joined to its derived balance (sum(earn) - sum(spend)) via a
+-- correlated subquery -- the SAME formula as BalanceForAccount, so the list
+-- balance can never drift from GET /balance. COALESCE(...,0) so an account with
+-- no txns shows 0.
+SELECT a.account_id, a.name, a.role,
+       CAST(COALESCE((SELECT SUM(CASE WHEN t.kind = 'earn' THEN t.points ELSE -t.points END)
+                      FROM transactions t WHERE t.account_id = a.account_id), 0) AS INTEGER) AS balance
+FROM accounts a
+ORDER BY a.account_id;
+
+-- name: ListTransactionsByAccount :many
+-- Newest-first by id (strictly monotonic AUTOINCREMENT) -- stable even when two
+-- rows share an occurred_at. Account existence is checked by the caller first.
+SELECT ref, kind, points, occurred_at
+FROM transactions
+WHERE account_id = ?
+ORDER BY id DESC;
+
 -- name: AppendAuditEntry :one
 INSERT INTO audit_log (ref, account_id, kind, points, outcome, reason)
 VALUES (?, ?, ?, ?, ?, ?)
